@@ -254,7 +254,7 @@ export default function AudiobookDetailPage() {
               <select
                 value={playbackRate}
                 onChange={e => setLocalRate(Number(e.target.value))}
-                className="bg-transparent text-foreground text-xs font-semibold border-0 outline-none cursor-pointer hover:text-primary transition-colors"
+                className="bg-card text-foreground text-xs font-semibold border border-border/50 rounded-lg px-1.5 py-0.5 outline-none cursor-pointer hover:text-primary transition-colors"
               >
                 {[0.5, 0.75, 1, 1.25, 1.5, 2].map(s => (
                   <option key={s} value={s}>{s}x</option>
@@ -271,7 +271,7 @@ export default function AudiobookDetailPage() {
                   setSleepMinutes(m);
                   setSleepLabel(`${m}m`);
                 }}
-                className="bg-transparent text-foreground text-xs font-semibold border-0 outline-none cursor-pointer hover:text-primary transition-colors"
+                className="bg-card text-foreground text-xs font-semibold border border-border/50 rounded-lg px-1.5 py-0.5 outline-none cursor-pointer hover:text-primary transition-colors"
               >
                 <option value="">{sleepLabel || 'Somn'}</option>
                 {[5, 10, 15, 30, 60].map(m => (
