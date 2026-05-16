@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   Clock, BookOpen, Trophy, Tag, Search, Square,
   Volume2, Upload, X, BarChart2, Headphones, Trash2, Award, Sparkles, Loader2,
+  FileText, Info, Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../components/Toast';
@@ -41,8 +42,10 @@ export default function DashboardPage() {
   const [isPlaying,     setIsPlaying]     = useState<string | null>(null);
   const [pdfSearch,     setPdfSearch]     = useState('');
   const pdfContentRef = useRef<Record<string, string>>({});
-  const [aiSummary,    setAiSummary]      = useState<Record<string, string>>({});
-  const [aiStatus,     setAiStatus]       = useState<Record<string, string>>({});
+  // Each summary carries its text + which tier produced it
+  const [aiSummary, setAiSummary] = useState<Record<string, { text: string; mode: 'extractive' | 'neural' }>>({});
+  // Each status carries a human message + optional 0-100 download progress
+  const [aiStatus,  setAiStatus]  = useState<Record<string, { message: string; progress?: number }>>({});
   const workerRef = useRef<Worker | null>(null);
 
   const getTtsOffset  = (id: string) => parseInt(sessionStorage.getItem(`tts-offset-${id}`) ?? '0');
@@ -183,7 +186,8 @@ export default function DashboardPage() {
   }, []);
 
   const handleSummarize = useCallback(async (bookId: string) => {
-    if (aiSummary[bookId] || aiStatus[bookId]) return;
+    // Block only while actively processing; allow re-run after a result exists
+    if (aiStatus[bookId]) return;
 
     const text = await fetchContent(bookId);
     if (!text) { toast('Conținut indisponibil.', 'error'); return; }
@@ -196,15 +200,27 @@ export default function DashboardPage() {
         );
       } catch {
         toast('Funcția AI nu este disponibilă. Rulați: npm install @xenova/transformers', 'error');
-        setAiStatus(prev => { const s = { ...prev }; delete s[bookId]; return s; });
         return;
       }
 
       workerRef.current.onmessage = (e) => {
-        const { type, bookId: bid, message, summary } = e.data;
-        if (type === 'status') setAiStatus(prev => ({ ...prev, [bid]: message }));
+        const { type, bookId: bid, message, summary, progress } = e.data;
+
+        if (type === 'extractive') {
+          // Instant tier-1 result — show immediately and clear the loading state
+          setAiSummary(prev => ({ ...prev, [bid]: { text: summary, mode: 'extractive' } }));
+          setAiStatus(prev => ({ ...prev, [bid]: { message: 'Rezumat rapid gata. Îmbunătățește cu AI…' } }));
+        }
+        if (type === 'status') {
+          setAiStatus(prev => ({ ...prev, [bid]: { message, progress } }));
+        }
         if (type === 'result') {
-          setAiSummary(prev => ({ ...prev, [bid]: summary }));
+          // Neural upgrade — replace the extractive result
+          setAiSummary(prev => ({ ...prev, [bid]: { text: summary, mode: 'neural' } }));
+          setAiStatus(prev => { const s = { ...prev }; delete s[bid]; return s; });
+        }
+        if (type === 'neural_error') {
+          // Neural failed — the extractive summary is already shown; just stop the spinner
           setAiStatus(prev => { const s = { ...prev }; delete s[bid]; return s; });
         }
         if (type === 'error') {
@@ -218,9 +234,9 @@ export default function DashboardPage() {
       };
     }
 
-    setAiStatus(prev => ({ ...prev, [bookId]: 'Se pregătește…' }));
+    setAiStatus(prev => ({ ...prev, [bookId]: { message: 'Inițializează…' } }));
     workerRef.current.postMessage({ text, bookId });
-  }, [aiSummary, aiStatus, fetchContent]);
+  }, [aiStatus, fetchContent]);
 
   const formatHours = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -510,31 +526,82 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Personal PDFs ── */}
-      <div className="space-y-4">
+      <div className="space-y-5">
+
+        {/* Section header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <BookOpen className="size-4 text-muted-foreground" />
-            <h2 className="font-semibold text-foreground">PDF-urile mele</h2>
-            <Badge variant="secondary" className="text-xs rounded-full font-mono">{personalBooks.length}/50</Badge>
+            <FileText className="size-4 text-muted-foreground" />
+            <h2
+              className="font-semibold text-foreground"
+              style={{ fontFamily: 'var(--font-fraunces)' }}
+            >
+              Documentele mele
+            </h2>
+            <Badge variant="secondary" className="text-xs rounded-full font-mono">
+              {personalBooks.length}/50
+            </Badge>
+          </div>
+          {personalBooks.length > 0 && (
+            <div className="relative max-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Caută…"
+                value={pdfSearch}
+                onChange={e => setPdfSearch(e.target.value)}
+                className="pl-9 h-8 text-xs rounded-xl border-border/70"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ── How it works (onboarding card) ── */}
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex gap-4">
+          <div className="shrink-0 size-9 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mt-0.5">
+            <Info className="size-4 text-primary" />
+          </div>
+          <div className="space-y-2.5 min-w-0">
+            <p className="font-semibold text-sm text-foreground">Cum funcționează documentele personale?</p>
+            <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <span className="text-base leading-none shrink-0">📄</span>
+                <p>Încarcă <strong className="text-foreground">notițe de curs</strong>, articole sau rapoarte în format PDF cu text selectabil.</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-base leading-none shrink-0">🔊</span>
+                <p>Textul este extras și poate fi <strong className="text-foreground">ascultat cu voce sintetizată</strong> — ideal pentru studiu fără ecran.</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-base leading-none shrink-0">⚡</span>
+                <p><strong className="text-foreground">Rezumatul rapid</strong> apare în sub o secundă, fără descărcări.</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-base leading-none shrink-0">🤖</span>
+                <p><strong className="text-foreground">Modelul neural</strong> (~40 MB, descărcat o singură dată) produce un rezumat mai rafinat în 1–2 minute.</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/60">
+              ⚠️ Scanările și documentele scrise de mână nu sunt suportate — este necesară prezența textului selectabil în PDF.
+            </p>
           </div>
         </div>
 
-        {/* Upload form */}
-        <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-sm">
-          <p className="text-sm font-medium text-foreground mb-4">Încarcă document nou</p>
-          <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-3 items-end">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="pdf-title" className="text-xs text-muted-foreground">Titlu</Label>
+        {/* ── Upload form ── */}
+        <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-sm space-y-4">
+          <p className="text-sm font-semibold text-foreground">Încarcă document nou</p>
+          <form onSubmit={handleUpload} className="grid sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="pdf-title" className="text-xs text-muted-foreground">Titlu document</Label>
               <Input
                 id="pdf-title"
                 required
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="ex: Curs 3"
+                placeholder="ex: Curs Algoritmi — S3"
                 className="h-9 rounded-xl border-border/70 focus-visible:ring-2 focus-visible:ring-primary/30"
               />
             </div>
-            <div className="flex-1 space-y-1.5">
+            <div className="space-y-1.5">
               <Label htmlFor="pdf-file" className="text-xs text-muted-foreground">Fișier PDF</Label>
               <input
                 id="pdf-file"
@@ -548,113 +615,176 @@ export default function DashboardPage() {
             <Button
               type="submit"
               disabled={uploading}
-              size="sm"
-              className="shrink-0 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
+              className="h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 whitespace-nowrap"
             >
-              {uploading ? 'Se procesează…' : <><Upload className="size-3.5 mr-1.5" />Încarcă</>}
+              {uploading
+                ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Se procesează…</>
+                : <><Upload className="size-3.5 mr-1.5" />Încarcă</>
+              }
             </Button>
           </form>
+          {file && (
+            <p className="text-xs text-muted-foreground">
+              Fișier selectat: <span className="text-foreground font-medium">{file.name}</span>
+              {' '}({(file.size / 1024 / 1024).toFixed(1)} MB)
+            </p>
+          )}
         </div>
 
-        {/* Search PDFs */}
-        {personalBooks.length > 0 && (
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Caută documente..."
-              value={pdfSearch}
-              onChange={e => setPdfSearch(e.target.value)}
-              className="pl-9 h-9 text-sm rounded-xl border-border/70 focus-visible:ring-2 focus-visible:ring-primary/30"
-            />
-          </div>
-        )}
-
-        {/* PDF list */}
+        {/* ── PDF card grid ── */}
         {filteredPdfs.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic py-4">
-            {personalBooks.length === 0 ? 'Nu ai încărcat documente.' : 'Niciun rezultat.'}
-          </p>
+          <div className="flex flex-col items-center justify-center py-14 text-center border-2 border-dashed border-border/40 rounded-2xl gap-3">
+            <FileText className="size-10 text-muted-foreground/25" />
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                {personalBooks.length === 0 ? 'Niciun document încărcat' : 'Niciun rezultat'}
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-0.5">
+                {personalBooks.length === 0
+                  ? 'Folosește formularul de mai sus pentru a adăuga primul tău PDF'
+                  : 'Încearcă un alt termen de căutare'}
+              </p>
+            </div>
+          </div>
         ) : (
-          <div className="space-y-2">
-            {filteredPdfs.map(book => (
-              <div key={book.id} className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden">
-                <div className="p-4 flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm text-foreground line-clamp-1">{book.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(book.createdAt).toLocaleDateString()}
-                      <span className="mx-1.5 opacity-40">·</span>
-                      <span className="font-mono">~{estimateReadingTime(book.contentLength)}</span>
-                    </p>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredPdfs.map(book => {
+              const summary    = aiSummary[book.id];
+              const status     = aiStatus[book.id];
+              const isNeural   = summary?.mode === 'neural';
+              const processing = !!status;
 
-                  <Button
-                    size="sm"
-                    variant={isPlaying === book.id ? 'destructive' : 'outline'}
-                    onClick={() => handlePlayAudio(book.id)}
-                    className={`shrink-0 rounded-xl h-8 text-xs ${isPlaying === book.id ? '' : 'hover:border-primary/40 hover:text-primary'}`}
-                  >
-                    {isPlaying === book.id
-                      ? <><Square  className="size-3.5 mr-1.5" />Oprește</>
-                      : <><Volume2 className="size-3.5 mr-1.5" />Ascultă</>
-                    }
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleSummarize(book.id)}
-                    disabled={!!aiStatus[book.id]}
-                    title="Generează rezumat AI"
-                    className="shrink-0 h-8 w-8 p-0 rounded-xl text-primary/60 hover:text-primary hover:bg-primary/10"
-                  >
-                    {aiStatus[book.id]
-                      ? <Loader2 className="size-3.5 animate-spin" />
-                      : <Sparkles className="size-3.5" />
-                    }
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeletePdf(book.id)}
-                    className="shrink-0 h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-
-                {aiStatus[book.id] && (
-                  <div className="px-4 pb-3 flex items-center gap-2 text-xs text-primary">
-                    <Loader2 className="size-3 animate-spin" />
-                    {aiStatus[book.id]}
-                  </div>
-                )}
-
-                <AnimatePresence>
-                  {aiSummary[book.id] && (
-                    <motion.div
-                      key={`ai-${book.id}`}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.35, ease: 'easeOut' }}
-                      className="px-4 pb-4 border-t border-border/60"
-                    >
-                      <div className="mt-3 p-3 rounded-xl bg-primary/5 border border-primary/15">
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <Sparkles className="size-3 text-primary" aria-hidden="true" />
-                          <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                            Rezumat AI
+              return (
+                <div
+                  key={book.id}
+                  className="bg-card rounded-2xl border border-border/60 shadow-sm overflow-hidden flex flex-col group/card transition-shadow hover:shadow-md"
+                >
+                  {/* Card header */}
+                  <div className="p-4 flex items-start gap-3">
+                    <div className="shrink-0 size-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                      <FileText className="size-5 text-red-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-foreground truncate leading-snug">{book.title}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(book.createdAt).toLocaleDateString('ro-RO')}
+                        </span>
+                        <span className="text-border text-xs">·</span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          ~{estimateReadingTime(book.contentLength)}
+                        </span>
+                        {summary && (
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                            isNeural
+                              ? 'bg-primary/10 text-primary border-primary/25'
+                              : 'bg-muted text-muted-foreground border-border/60'
+                          }`}>
+                            {isNeural
+                              ? <><Sparkles className="size-2.5" />Neural AI</>
+                              : <><Zap className="size-2.5" />Rapid</>
+                            }
                           </span>
-                        </div>
-                        <p className="text-xs text-foreground leading-relaxed">{aiSummary[book.id]}</p>
+                        )}
                       </div>
-                    </motion.div>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePdf(book.id)}
+                      aria-label="Șterge document"
+                      className="shrink-0 opacity-0 group-hover/card:opacity-100 flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="px-4 pb-4 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={isPlaying === book.id ? 'destructive' : 'outline'}
+                      onClick={() => handlePlayAudio(book.id)}
+                      className="flex-1 rounded-xl h-8 text-xs"
+                    >
+                      {isPlaying === book.id
+                        ? <><Square  className="size-3.5 mr-1.5" />Oprește</>
+                        : <><Volume2 className="size-3.5 mr-1.5" />Ascultă</>
+                      }
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSummarize(book.id)}
+                      disabled={processing}
+                      className={`flex-1 rounded-xl h-8 text-xs transition-colors ${
+                        !processing ? 'hover:border-primary/40 hover:text-primary' : ''
+                      }`}
+                    >
+                      {processing
+                        ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Procesează…</>
+                        : summary
+                          ? <><Sparkles className="size-3.5 mr-1.5" />Regenerează</>
+                          : <><Sparkles className="size-3.5 mr-1.5" />Rezumă</>
+                      }
+                    </Button>
+                  </div>
+
+                  {/* ── Progress bar (model download) ── */}
+                  {status?.progress != null && (
+                    <div className="px-4 pb-3 space-y-1.5">
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-primary to-[var(--gold)] transition-all duration-300"
+                          style={{ width: `${status.progress}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{status.message}</p>
+                    </div>
                   )}
-                </AnimatePresence>
-              </div>
-            ))}
+
+                  {/* ── Spinner (no progress number) ── */}
+                  {status && status.progress == null && (
+                    <div className="px-4 pb-3 flex items-center gap-2 text-xs text-primary">
+                      <Loader2 className="size-3 animate-spin shrink-0" />
+                      <span>{status.message}</span>
+                    </div>
+                  )}
+
+                  {/* ── Summary panel ── */}
+                  <AnimatePresence>
+                    {summary && (
+                      <motion.div
+                        key={`ai-${book.id}`}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        className="border-t border-border/60 px-4 py-3 bg-primary/[0.03]"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            {isNeural
+                              ? <Sparkles className="size-3 text-primary" />
+                              : <Zap className="size-3 text-muted-foreground" />
+                            }
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${isNeural ? 'text-primary' : 'text-muted-foreground'}`}>
+                              {isNeural ? 'Rezumat Neural AI' : 'Rezumat Rapid'}
+                            </span>
+                          </div>
+                          {/* Show if still trying to upgrade to neural */}
+                          {!isNeural && processing && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Loader2 className="size-2.5 animate-spin" />
+                              Se îmbunătățește…
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-foreground leading-relaxed">{summary.text}</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
