@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 
+import { API_URL } from '@/lib/api';
+
 export default function AudioPlayer({ bookId, audioUrl }: { bookId: string, audioUrl: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [startPosition, setStartPosition] = useState<number>(0);
@@ -12,7 +14,7 @@ export default function AudioPlayer({ bookId, audioUrl }: { bookId: string, audi
 
       try {
         // ADAUGĂM cache: 'no-store' pentru a nu lăsa browserul să ne dea date vechi!
-        const res = await fetch(`http://localhost:5000/api/audiobooks/progress/${bookId}`, {
+        const res = await fetch(`${API_URL}/api/audiobooks/progress/${bookId}`, {
           cache: 'no-store',
           headers: { 
             'Authorization': `Bearer ${token}`,
@@ -54,7 +56,7 @@ export default function AudioPlayer({ bookId, audioUrl }: { bookId: string, audi
     if (!token) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/audiobooks/progress', {
+      const res = await fetch(`${API_URL}/api/audiobooks/progress`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

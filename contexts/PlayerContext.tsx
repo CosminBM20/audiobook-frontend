@@ -4,6 +4,7 @@ import React, {
   createContext, useContext, useRef,
   useState, useEffect, useCallback, useMemo,
 } from 'react';
+import { API_URL } from '@/lib/api';
 
 export interface PlayerBook {
   id: string;
@@ -161,7 +162,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const saveProgress = (bookId: string, position: number) => {
     const token = localStorage.getItem('token');
     if (!token || position < 1) return;
-    fetch('http://localhost:5000/api/audiobooks/progress', {
+    fetch(`${API_URL}/api/audiobooks/progress`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ audiobookId: bookId, currentPosition: Math.floor(position) }),
@@ -190,9 +191,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
 
       const [bookRes, progRes] = await Promise.all([
-        fetch(`http://localhost:5000/api/audiobooks/${id}`),
+        fetch(`${API_URL}/api/audiobooks/${id}`),
         token
-          ? fetch(`http://localhost:5000/api/audiobooks/progress/${id}`, { headers })
+          ? fetch(`${API_URL}/api/audiobooks/progress/${id}`, { headers })
           : Promise.resolve(new Response(JSON.stringify({ success: false }))),
       ]);
 
@@ -254,9 +255,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
 
       const [bookRes, progRes] = await Promise.all([
-        fetch(`http://localhost:5000/api/audiobooks/${id}`),
+        fetch(`${API_URL}/api/audiobooks/${id}`),
         token
-          ? fetch(`http://localhost:5000/api/audiobooks/progress/${id}`, { headers })
+          ? fetch(`${API_URL}/api/audiobooks/progress/${id}`, { headers })
           : Promise.resolve(new Response(JSON.stringify({ success: false }))),
       ]);
 

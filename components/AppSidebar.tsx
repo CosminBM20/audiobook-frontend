@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Library, LayoutDashboard, ShieldCheck, LogOut, Headphones } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { usePlayerControls } from '../contexts/PlayerContext';
+import { API_URL } from '@/lib/api';
 
 interface AppSidebarProps {
   mobileOpen?: boolean;
@@ -36,7 +37,7 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
       setUserName(user.name || '');
     }
     if (token) {
-      fetch('http://localhost:5000/api/audiobooks/stats', {
+      fetch(`${API_URL}/api/audiobooks/stats`, {
         headers: { 'Authorization': `Bearer ${token}` },
       })
         .then(r => r.json())

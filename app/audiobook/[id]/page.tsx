@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { usePlayer } from '../../../contexts/PlayerContext';
 import { toast } from '../../../components/Toast';
+import { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,7 +50,7 @@ export default function AudiobookDetailPage() {
       if (deepLink && deepLink > 0) player.seek(deepLink);
     });
 
-    fetch(`http://localhost:5000/api/bookmarks/${id}`, {
+    fetch(`${API_URL}/api/bookmarks/${id}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
       .then(r => r.json())
@@ -91,7 +92,7 @@ export default function AudiobookDetailPage() {
     const position = Math.floor(player.currentTime);
     const label    = bookmarkLabel.trim() || fmt(position);
     try {
-      const res  = await fetch('http://localhost:5000/api/bookmarks', {
+      const res  = await fetch(`${API_URL}/api/bookmarks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ audiobookId: id, position, label }),
@@ -109,7 +110,7 @@ export default function AudiobookDetailPage() {
   const deleteBookmark = useCallback(async (bmId: string) => {
     const token = localStorage.getItem('token');
     try {
-      await fetch(`http://localhost:5000/api/bookmarks/${bmId}`, {
+      await fetch(`${API_URL}/api/bookmarks/${bmId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });

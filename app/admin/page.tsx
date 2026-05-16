@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { API_URL } from '@/lib/api';
 
 interface Book {
   id: string;
@@ -65,7 +66,7 @@ export default function AdminPage() {
   const fetchBooks = async (token: string) => {
     setLoadingBooks(true);
     try {
-      const res  = await fetch('http://localhost:5000/api/audiobooks');
+      const res  = await fetch(`${API_URL}/api/audiobooks`);
       const data = await res.json();
       if (data.success) setBooks(data.data);
     } catch {
@@ -79,7 +80,7 @@ export default function AdminPage() {
     setDeleting(bookId);
     const token = localStorage.getItem('token');
     try {
-      const res  = await fetch(`http://localhost:5000/api/audiobooks/${bookId}`, {
+      const res  = await fetch(`${API_URL}/api/audiobooks/${bookId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -125,7 +126,7 @@ export default function AdminPage() {
     body.append('audioFile', audioFile);
 
     try {
-      const res  = await fetch('http://localhost:5000/api/audiobooks', {
+      const res  = await fetch(`${API_URL}/api/audiobooks`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body,

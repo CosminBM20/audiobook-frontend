@@ -7,6 +7,7 @@ import { BookCard } from '../components/BookCard';
 import { BookListRow } from '../components/BookListRow';
 import { useSearch } from '../components/SearchContext';
 import { usePlayerControls } from '../contexts/PlayerContext';
+import { API_URL } from '@/lib/api';
 import { LayoutGrid, List, ArrowUpAZ, Clock3, RotateCcw, User, Play, X } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -52,13 +53,13 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    fetch('http://localhost:5000/api/favorites', { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch(`${API_URL}/api/favorites`, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { if (d.success) setFavorites(new Set(d.data)); })
       .catch(() => {});
 
     if (!sessionStorage.getItem('bannerDismissed')) {
-      fetch('http://localhost:5000/api/audiobooks/my-books', { headers: { 'Authorization': `Bearer ${token}` } })
+      fetch(`${API_URL}/api/audiobooks/my-books`, { headers: { 'Authorization': `Bearer ${token}` } })
         .then(r => r.json())
         .then(d => {
           if (d.success && d.data.length > 0) {
@@ -90,7 +91,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
 
     try {
       const res = await fetch(
-        wasFav ? `http://localhost:5000/api/favorites/${bookId}` : 'http://localhost:5000/api/favorites',
+        wasFav ? `${API_URL}/api/favorites/${bookId}` : `${API_URL}/api/favorites`,
         {
           method:  wasFav ? 'DELETE' : 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -115,7 +116,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     const token = localStorage.getItem('token');
     if (!token) { toast('Autentifică-te pentru a folosi această funcție.', 'error'); return; }
     try {
-      const res  = await fetch('http://localhost:5000/api/listen-later', {
+      const res  = await fetch(`${API_URL}/api/listen-later`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ audiobookId: bookId }),

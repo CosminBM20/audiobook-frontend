@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { API_URL } from '@/lib/api';
 import { Separator } from '@/components/ui/separator';
 
 export default function AddBookPage() {
@@ -63,7 +64,7 @@ export default function AddBookPage() {
     body.append('audioFile', audioFile);
 
     try {
-      const res = await fetch('http://localhost:5000/api/audiobooks', {
+      const res = await fetch(`${API_URL}/api/audiobooks`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body,

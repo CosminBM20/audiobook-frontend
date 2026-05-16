@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { BookCard } from '../../components/BookCard';
 import { PredictiveInsights } from '../../components/PredictiveInsights';
+import { API_URL } from '@/lib/api';
 
 interface Stats {
   totalSeconds: number;
@@ -57,11 +58,11 @@ export default function DashboardPage() {
   const fetchAll = async (token: string) => {
     try {
       const [r1, r2, r3, r4, r5] = await Promise.all([
-        fetch('http://localhost:5000/api/personal-books',      { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('http://localhost:5000/api/audiobooks/my-books', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('http://localhost:5000/api/audiobooks/stats',    { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('http://localhost:5000/api/audiobooks/activity', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('http://localhost:5000/api/listen-later',        { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/personal-books`,      { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/audiobooks/my-books`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/audiobooks/stats`,    { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/audiobooks/activity`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/listen-later`,        { headers: { 'Authorization': `Bearer ${token}` } }),
       ]);
       const [d1, d2, d3, d4, d5] = await Promise.all([r1.json(), r2.json(), r3.json(), r4.json(), r5.json()]);
       if (d1.success) setPersonalBooks(d1.data);
@@ -85,7 +86,7 @@ export default function DashboardPage() {
     formData.append('title', title);
     formData.append('pdfFile', file);
     try {
-      const res  = await fetch('http://localhost:5000/api/personal-books/upload', {
+      const res  = await fetch(`${API_URL}/api/personal-books/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -110,7 +111,7 @@ export default function DashboardPage() {
     if (pdfContentRef.current[bookId]) return pdfContentRef.current[bookId];
     const token = localStorage.getItem('token');
     try {
-      const res  = await fetch(`http://localhost:5000/api/personal-books/${bookId}/content`, {
+      const res  = await fetch(`${API_URL}/api/personal-books/${bookId}/content`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -148,7 +149,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('token');
     if (isPlaying === bookId) { window.speechSynthesis.cancel(); setIsPlaying(null); }
     try {
-      const res  = await fetch(`http://localhost:5000/api/personal-books/${bookId}`, {
+      const res  = await fetch(`${API_URL}/api/personal-books/${bookId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -165,7 +166,7 @@ export default function DashboardPage() {
   const removeListenLater = async (audiobookId: string) => {
     const token = localStorage.getItem('token');
     try {
-      await fetch(`http://localhost:5000/api/listen-later/${audiobookId}`, {
+      await fetch(`${API_URL}/api/listen-later/${audiobookId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });

@@ -6,6 +6,7 @@ import { Headphones, Search, Bell, User, Menu, Moon, Sun, X } from 'lucide-react
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearch } from './SearchContext';
+import { API_URL } from '@/lib/api';
 
 interface AppHeaderProps {
   onMenuToggle?: () => void;
@@ -71,7 +72,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
       setHasUnread(false);
       localStorage.setItem('notifSeenAt', Date.now().toString());
       if (!notifLoaded) {
-        fetch('http://localhost:5000/api/audiobooks')
+        fetch(`${API_URL}/api/audiobooks`)
           .then(r => r.json())
           .then(data => { if (data.success) setNotifBooks(data.data.slice(-4).reverse()); })
           .catch(() => {})
@@ -79,6 +80,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
       }
     }
   };
+
 
   const initials = userName ? userName.charAt(0).toUpperCase() : null;
 

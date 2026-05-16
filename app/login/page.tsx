@@ -8,6 +8,7 @@ import { toast } from '../../components/Toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { API_URL } from '@/lib/api';
 
 export default function LoginPage() {
   const [email,    setEmail]    = useState('');
@@ -24,7 +25,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res  = await fetch('http://localhost:5000/api/auth/login', {
+      const res  = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

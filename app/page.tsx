@@ -1,3 +1,4 @@
+import { API_URL } from '@/lib/api';
 import HomeClient from './HomeClient';
 
 export interface Audiobook {
@@ -13,7 +14,7 @@ export interface Audiobook {
 
 async function getBooks(): Promise<Audiobook[]> {
   try {
-    const res = await fetch('http://localhost:5000/api/audiobooks', {
+    const res = await fetch(`${API_URL}/api/audiobooks`, {
       next: { revalidate: 60 },
     });
     const data = await res.json();
