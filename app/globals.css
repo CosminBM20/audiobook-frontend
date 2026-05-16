@@ -1,26 +1,241 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* WCAG 2.1 §2.3.3 — respect user motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:        0.01ms !important;
+    animation-iteration-count: 1      !important;
+    transition-duration:       0.01ms !important;
+    scroll-behavior:           auto   !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background:               var(--background);
+  --color-foreground:               var(--foreground);
+  --font-sans:                      var(--font-sans);
+  --font-mono:                      var(--font-jetbrains);
+  --font-display:                   var(--font-fraunces);
+  --font-heading:                   var(--font-sans);
+  --color-sidebar-ring:             var(--sidebar-ring);
+  --color-sidebar-border:           var(--sidebar-border);
+  --color-sidebar-accent-foreground:var(--sidebar-accent-foreground);
+  --color-sidebar-accent:           var(--sidebar-accent);
+  --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-primary:          var(--sidebar-primary);
+  --color-sidebar-foreground:       var(--sidebar-foreground);
+  --color-sidebar:                  var(--sidebar);
+  --color-chart-5:                  var(--chart-5);
+  --color-chart-4:                  var(--chart-4);
+  --color-chart-3:                  var(--chart-3);
+  --color-chart-2:                  var(--chart-2);
+  --color-chart-1:                  var(--chart-1);
+  --color-ring:                     var(--ring);
+  --color-input:                    var(--input);
+  --color-border:                   var(--border);
+  --color-destructive:              var(--destructive);
+  --color-accent-foreground:        var(--accent-foreground);
+  --color-accent:                   var(--accent);
+  --color-muted-foreground:         var(--muted-foreground);
+  --color-muted:                    var(--muted);
+  --color-secondary-foreground:     var(--secondary-foreground);
+  --color-secondary:                var(--secondary);
+  --color-primary-foreground:       var(--primary-foreground);
+  --color-primary:                  var(--primary);
+  --color-popover-foreground:       var(--popover-foreground);
+  --color-popover:                  var(--popover);
+  --color-card-foreground:          var(--card-foreground);
+  --color-card:                     var(--card);
+  /* Solarpunk accent tokens */
+  --color-sage:                     var(--sage);
+  --color-gold:                     var(--gold);
+  --color-moss:                     var(--moss);
+  --radius-sm:   calc(var(--radius) * 0.6);
+  --radius-md:   calc(var(--radius) * 0.8);
+  --radius-lg:   var(--radius);
+  --radius-xl:   calc(var(--radius) * 1.4);
+  --radius-2xl:  calc(var(--radius) * 1.8);
+  --radius-3xl:  calc(var(--radius) * 2.2);
+  --radius-4xl:  calc(var(--radius) * 2.6);
+}
+
+input[type="file"] { color: var(--foreground); }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in { animation: slide-in 0.25s ease-out; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes vinylSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes audioBar {
+  from { transform: scaleY(0.2); }
+  to   { transform: scaleY(1); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 10px var(--glow-sage); }
+  50%       { box-shadow: 0 0 22px var(--glow-sage-strong); }
+}
+.animate-glow-pulse { animation: glow-pulse 2.4s ease-in-out infinite; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+.animate-float { animation: float 3.5s ease-in-out infinite; }
+
+/* ── Solarpunk Light Mode ────────────────────────────────────────────────── */
+:root {
+  /* Warm cream backgrounds */
+  --background:           oklch(0.97 0.010 80);
+  --foreground:           oklch(0.14 0.020 100);
+
+  --card:                 oklch(1 0 0);
+  --card-foreground:      oklch(0.14 0.020 100);
+  --popover:              oklch(1 0 0);
+  --popover-foreground:   oklch(0.14 0.020 100);
+
+  /* Deep sage green — dark enough for WCAG AA on cream */
+  --primary:              oklch(0.38 0.120 142);
+  --primary-foreground:   oklch(0.97 0.010 80);
+
+  --secondary:            oklch(0.93 0.012 80);
+  --secondary-foreground: oklch(0.25 0.025 100);
+
+  --muted:                oklch(0.94 0.010 80);
+  --muted-foreground:     oklch(0.50 0.040 100);
+
+  --accent:               oklch(0.93 0.012 80);
+  --accent-foreground:    oklch(0.25 0.025 100);
+
+  --destructive:          oklch(0.55 0.240 27);
+
+  --border:               oklch(0.88 0.012 80);
+  --input:                oklch(0.88 0.012 80);
+  --ring:                 oklch(0.38 0.120 142);
+
+  /* Solarpunk chart palette */
+  --chart-1:              oklch(0.38 0.120 142);
+  --chart-2:              oklch(0.62 0.130 75);
+  --chart-3:              oklch(0.48 0.120 185);
+  --chart-4:              oklch(0.48 0.100 280);
+  --chart-5:              oklch(0.58 0.140 55);
+
+  --radius: 0.75rem;
+
+  /* Sidebar */
+  --sidebar:                      oklch(0.95 0.012 80);
+  --sidebar-foreground:           oklch(0.14 0.020 100);
+  --sidebar-primary:              oklch(0.38 0.120 142);
+  --sidebar-primary-foreground:   oklch(0.97 0.010 80);
+  --sidebar-accent:               oklch(0.91 0.014 80);
+  --sidebar-accent-foreground:    oklch(0.25 0.025 100);
+  --sidebar-border:               oklch(0.88 0.012 80);
+  --sidebar-ring:                 oklch(0.38 0.120 142);
+
+  /* Solarpunk accent colors */
+  --sage:             oklch(0.38 0.120 142);
+  --gold:             oklch(0.62 0.130 75);
+  --moss:             oklch(0.30 0.100 142);
+
+  /* Glow effects */
+  --glow-sage:        oklch(0.38 0.120 142 / 0.18);
+  --glow-sage-strong: oklch(0.38 0.120 142 / 0.38);
+  --glow-gold:        oklch(0.62 0.130 75  / 0.18);
+}
+
+/* ── Solarpunk Dark Mode ─────────────────────────────────────────────────── */
+.dark {
+  /* Deep warm charcoal — slight green undertone */
+  --background:           oklch(0.12 0.016 105);
+  --foreground:           oklch(0.94 0.010 80);
+
+  --card:                 oklch(0.17 0.020 105);
+  --card-foreground:      oklch(0.94 0.010 80);
+  --popover:              oklch(0.19 0.022 105);
+  --popover-foreground:   oklch(0.94 0.010 80);
+
+  /* Warm sage green — the visual centrepiece */
+  --primary:              oklch(0.72 0.160 142);
+  --primary-foreground:   oklch(0.10 0.012 100);
+
+  --secondary:            oklch(0.22 0.025 105);
+  --secondary-foreground: oklch(0.94 0.010 80);
+
+  --muted:                oklch(0.20 0.022 105);
+  --muted-foreground:     oklch(0.60 0.040 105);
+
+  --accent:               oklch(0.24 0.028 105);
+  --accent-foreground:    oklch(0.94 0.010 80);
+
+  --destructive:          oklch(0.65 0.220 25);
+
+  --border:               oklch(0.26 0.025 105);
+  --input:                oklch(0.23 0.022 105);
+  --ring:                 oklch(0.72 0.160 142);
+
+  /* Luminous solarpunk chart palette */
+  --chart-1:              oklch(0.72 0.160 142);
+  --chart-2:              oklch(0.78 0.140 75);
+  --chart-3:              oklch(0.68 0.140 185);
+  --chart-4:              oklch(0.65 0.100 280);
+  --chart-5:              oklch(0.75 0.160 55);
+
+  /* Sidebar — slightly deeper than bg */
+  --sidebar:                      oklch(0.14 0.018 105);
+  --sidebar-foreground:           oklch(0.94 0.010 80);
+  --sidebar-primary:              oklch(0.72 0.160 142);
+  --sidebar-primary-foreground:   oklch(0.10 0.012 100);
+  --sidebar-accent:               oklch(0.20 0.022 105);
+  --sidebar-accent-foreground:    oklch(0.94 0.010 80);
+  --sidebar-border:               oklch(0.22 0.022 105);
+  --sidebar-ring:                 oklch(0.72 0.160 142);
+
+  /* Solarpunk accent colors */
+  --sage:             oklch(0.72 0.160 142);
+  --gold:             oklch(0.78 0.140 75);
+  --moss:             oklch(0.52 0.120 142);
+
+  /* Glow effects */
+  --glow-sage:        oklch(0.72 0.160 142 / 0.25);
+  --glow-sage-strong: oklch(0.72 0.160 142 / 0.50);
+  --glow-gold:        oklch(0.78 0.140 75  / 0.25);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }
