@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback, useDeferredValue } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { toast } from '../components/Toast';
 import { BookCard } from '../components/BookCard';
 import { BookListRow } from '../components/BookListRow';
@@ -27,11 +27,11 @@ interface LastBook {
 type SortMode = 'default' | 'title' | 'author' | 'duration';
 type ViewMode = 'grid' | 'list';
 
-const gridContainer = {
+const gridContainer: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.04, delayChildren: 0.05 } },
 };
-const gridItem = {
+const gridItem: Variants = {
   hidden:  { opacity: 0, y: 14, scale: 0.97 },
   visible: { opacity: 1, y: 0,  scale: 1,
     transition: { duration: 0.28, ease: 'easeOut' } },
