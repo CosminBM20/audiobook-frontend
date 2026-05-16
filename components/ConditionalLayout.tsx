@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { AppHeader } from './AppHeader';
 import { AppSidebar } from './AppSidebar';
 import { BottomPlayer } from './BottomPlayer';
@@ -12,42 +12,47 @@ import { HelpCircle, X, Keyboard } from 'lucide-react';
 const NO_CHROME = ['/login', '/register'];
 
 const SHORTCUTS = [
-  { key: 'Space',  action: 'Play / Pauză' },
-  { key: '←',     action: 'Înapoi 15 secunde' },
-  { key: '→',     action: 'Înainte 15 secunde' },
-  { key: 'M',     action: 'Mute / Unmute volum' },
+  { key: 'Space', action: 'Play / Pauză' },
+  { key: '←',    action: 'Înapoi 15 secunde' },
+  { key: '→',    action: 'Înainte 15 secunde' },
+  { key: 'M',    action: 'Mute / Unmute volum' },
 ];
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
-  const pathname  = usePathname();
-  const router    = useRouter();
-  const [mobileOpen,  setMobileOpen]  = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [showHelp,    setShowHelp]    = useState(false);
+  const pathname = usePathname();
+
+  // ── Locked by default. Nothing renders until this becomes true. ───────────
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [mobileOpen,   setMobileOpen]   = useState(false);
+  const [showHelp,     setShowHelp]     = useState(false);
   const { book } = usePlayerControls();
 
   const isAuthRoute = NO_CHROME.includes(pathname);
 
-  // ── Auth gate ──────────────────────────────────────────────────────────────
-  // Runs after first paint (localStorage is browser-only).
-  // If no token is found, redirect before any protected content is visible.
   useEffect(() => {
-    if (isAuthRoute) return;      // login/register don't need a token
-    if (authChecked) return;      // already verified this session
+    if (isAuthRoute) {
+      // /login and /register are always allowed to render.
+      setIsAuthorized(true);
+      return;
+    }
+
     const token = localStorage.getItem('token');
     if (!token) {
-      router.replace('/login');   // hard replace so back-button doesn't leak content
-    } else {
-      setAuthChecked(true);
+      // window.location.href is a synchronous hard redirect.
+      // Unlike router.replace(), it does NOT yield back to React,
+      // so there is zero chance of a subsequent render showing protected content.
+      window.location.href = '/login';
+      return;
     }
-  }, [isAuthRoute, authChecked, router]);
 
-  // ── Auth / no-chrome routes ────────────────────────────────────────────────
-  if (isAuthRoute) return <>{children}</>;
+    setIsAuthorized(true);
+  }, [isAuthRoute]);
 
-  // Fullscreen spinner while the token check is in flight — prevents a flash
-  // of protected content before the redirect fires.
-  if (!authChecked) {
+  // ── STRICT GATE ───────────────────────────────────────────────────────────
+  // isAuthorized starts false and is only flipped to true inside the effect
+  // above. Until then, this is the ONLY thing that renders — no children,
+  // no chrome, no content at all.
+  if (!isAuthorized) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -55,6 +60,10 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // ── Auth routes (login / register) — no chrome ────────────────────────────
+  if (isAuthRoute) return <>{children}</>;
+
+  // ── Protected routes — full chrome ────────────────────────────────────────
   return (
     <SearchProvider>
       <AppHeader onMenuToggle={() => setMobileOpen(o => !o)} />
@@ -69,7 +78,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
       <BottomPlayer />
 
-      {/* ── Floating help button ──────────────────────────────────────────── */}
+      {/* ── Floating help button ─────────────────────────────────────────── */}
       <button
         aria-label="Deschide ajutor"
         onClick={() => setShowHelp(true)}
@@ -85,7 +94,6 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
           onClick={e => { if (e.target === e.currentTarget) setShowHelp(false); }}
         >
           <div className="bg-popover border border-border/60 rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in">
-
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <Keyboard className="size-4 text-primary" />
@@ -99,7 +107,6 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
                 <X className="size-4" />
               </button>
             </div>
-
             <div className="space-y-3">
               {SHORTCUTS.map(({ key, action }) => (
                 <div key={key} className="flex items-center justify-between">
@@ -110,7 +117,6 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
                 </div>
               ))}
             </div>
-
             <p className="mt-5 text-xs text-muted-foreground/50 text-center">
               Scurtăturile funcționează în pagina playerului
             </p>
