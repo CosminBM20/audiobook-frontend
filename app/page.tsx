@@ -15,7 +15,7 @@ export interface Audiobook {
 async function getBooks(): Promise<Audiobook[]> {
   try {
     const res = await fetch(`${API_URL}/api/audiobooks`, {
-      next: { revalidate: 60 },
+      cache: 'no-store',
     });
     const data = await res.json();
     return data.success ? data.data : [];

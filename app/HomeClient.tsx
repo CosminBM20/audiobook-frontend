@@ -48,6 +48,8 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
   const [favorites,        setFavorites]        = useState<Set<string>>(new Set());
   const [lastBook,         setLastBook]         = useState<LastBook | null>(null);
   const [showBanner,       setShowBanner]       = useState(false);
+  const [books,            setBooks]            = useState<Audiobook[]>(initialBooks);
+  const [booksLoading,     setBooksLoading]     = useState(initialBooks.length === 0);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -75,6 +77,18 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
         })
         .catch(() => {});
     }
+  }, []);
+
+  // Fallback: if the server component returned an empty list (backend cold-start
+  // or stale router cache), fetch books client-side on first render.
+  useEffect(() => {
+    if (initialBooks.length > 0) { setBooksLoading(false); return; }
+    fetch(`${API_URL}/api/audiobooks`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setBooks(d.data); })
+      .catch(() => {})
+      .finally(() => setBooksLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleFavorite = useCallback(async (e: React.MouseEvent, bookId: string) => {
@@ -128,12 +142,12 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
   }, []);
 
   const categories = useMemo(
-    () => ['All', ...Array.from(new Set(initialBooks.map(b => b.category.name)))],
-    [initialBooks],
+    () => ['All', ...Array.from(new Set(books.map(b => b.category.name)))],
+    [books],
   );
 
   const filteredBooks = useMemo(() => {
-    let books = initialBooks.filter(book => {
+    let list = books.filter(book => {
       const q = deferredSearch.toLowerCase();
       const matchesSearch =
         !q ||
@@ -144,12 +158,12 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
       return matchesSearch && matchesCategory;
     });
 
-    if (sortMode === 'title')    books = [...books].sort((a, b) => a.title.localeCompare(b.title));
-    if (sortMode === 'author')   books = [...books].sort((a, b) => a.author.name.localeCompare(b.author.name));
-    if (sortMode === 'duration') books = [...books].sort((a, b) => a.durationSeconds - b.durationSeconds);
+    if (sortMode === 'title')    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
+    if (sortMode === 'author')   list = [...list].sort((a, b) => a.author.name.localeCompare(b.author.name));
+    if (sortMode === 'duration') list = [...list].sort((a, b) => a.durationSeconds - b.durationSeconds);
 
-    return books;
-  }, [initialBooks, deferredSearch, selectedCategory, sortMode]);
+    return list;
+  }, [books, deferredSearch, selectedCategory, sortMode]);
 
   const gridKey = `${selectedCategory}-${sortMode}-${deferredSearch}`;
 
@@ -220,8 +234,10 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
             Librărie
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5" aria-live="polite" aria-atomic="true">
-            {filteredBooks.length} {filteredBooks.length === 1 ? 'carte' : 'cărți'}
-            {search !== deferredSearch && ' …'}
+            {booksLoading
+              ? 'Se încarcă…'
+              : `${filteredBooks.length} ${filteredBooks.length === 1 ? 'carte' : 'cărți'}`}
+            {!booksLoading && search !== deferredSearch && ' …'}
           </p>
         </div>
 
@@ -287,7 +303,20 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
       </div>
 
       {/* ── Book grid / list ───────────────────────────────────────────────── */}
-      {filteredBooks.length > 0 ? (
+      {booksLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="bg-card rounded-2xl overflow-hidden shadow-sm">
+              <div className="aspect-[2/3] bg-muted animate-pulse" />
+              <div className="p-3 space-y-2">
+                <div className="h-3 bg-muted animate-pulse rounded-md" />
+                <div className="h-2.5 bg-muted animate-pulse rounded-md w-2/3" />
+                <div className="h-2 bg-muted animate-pulse rounded-md w-1/3 mt-1" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filteredBooks.length > 0 ? (
         viewMode === 'grid' ? (
           <motion.div
             key={gridKey}

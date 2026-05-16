@@ -34,8 +34,9 @@ export default function LoginPage() {
       if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
-        router.push('/');
-        router.refresh();
+        // Hard redirect: bypasses Next.js router cache so the Server Component
+        // re-runs and fetches fresh books from the backend.
+        window.location.href = '/';
       } else {
         toast(data.message || 'Eroare la autentificare', 'error');
       }
