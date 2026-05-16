@@ -34,7 +34,7 @@ const gridContainer = {
 const gridItem = {
   hidden:  { opacity: 0, y: 14, scale: 0.97 },
   visible: { opacity: 1, y: 0,  scale: 1,
-    transition: { duration: 0.28, ease: [0.25, 0.1, 0.25, 1] } },
+    transition: { duration: 0.28, ease: 'easeOut' } },
 };
 
 export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[] }) {
