@@ -64,6 +64,27 @@ export function usePlayer() {
   return { ...usePlayerControls(), ...usePlayerTime() };
 }
 
+// ── Volume persistence helpers ────────────────────────────────────────────────
+// Priority: localStorage key > preferredVolume from login response > 0.7 default
+// The localStorage key wins so that per-device preferences aren't overwritten on
+// every login, but a fresh device correctly picks up the DB-persisted preference.
+function getInitialVolume(): number {
+  if (typeof window === 'undefined') return 0.7;
+  const saved = localStorage.getItem('audiobook_volume');
+  if (saved !== null) {
+    const parsed = parseFloat(saved);
+    if (!isNaN(parsed)) return parsed;
+  }
+  try {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const u = JSON.parse(userStr) as { preferredVolume?: number };
+      if (typeof u.preferredVolume === 'number') return u.preferredVolume;
+    }
+  } catch {}
+  return 0.7;
+}
+
 // ── Module-level singleton Audio element ─────────────────────────────────────
 // Created synchronously at module-load time (browser only), so it is always
 // available when React effects run. This eliminates the race condition where
@@ -83,7 +104,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying,   setIsPlaying]   = useState(false);
   const [isLoading,   setIsLoading]   = useState(false);
   const [duration,    setDuration]    = useState(0);
-  const [volume,      setVolumeState] = useState(1);
+  const [volume,      setVolumeState] = useState(getInitialVolume);
   const [playbackRate, setRateState]  = useState(1);
 
   // ── Volatile state
@@ -96,8 +117,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const timeRef    = useRef(0);
   const durRef     = useRef(0);
   const bookIdRef  = useRef<string | null>(null);
-  const volumeRef  = useRef(1);
-  const rateRef    = useRef(1);
+  const volumeRef         = useRef(typeof window !== 'undefined' ? getInitialVolume() : 0.7);
+  const rateRef           = useRef(1);
+  const syncVolumeTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Attach event listeners to the already-created audio element ──────────
   useEffect(() => {
@@ -315,10 +337,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [seek]);
 
   const setVolume = useCallback((v: number) => {
-    const clamped     = Math.max(0, Math.min(1, v));
+    const clamped = Math.max(0, Math.min(1, v));
     setVolumeState(clamped);
     volumeRef.current = clamped;
     if (audioRef.current) audioRef.current.volume = clamped;
+
+    // Persist locally — immediate, works offline
+    localStorage.setItem('audiobook_volume', String(clamped));
+
+    // Debounce DB write so rapid slider drags don't spam the backend
+    if (syncVolumeTimer.current) clearTimeout(syncVolumeTimer.current);
+    syncVolumeTimer.current = setTimeout(() => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      fetch(`${API_URL}/api/user/volume`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ preferredVolume: clamped }),
+      }).catch(() => {});
+    }, 1500);
   }, []);
 
   const setPlaybackRate = useCallback((r: number) => {
