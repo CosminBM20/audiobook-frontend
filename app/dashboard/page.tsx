@@ -17,6 +17,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { BookCard } from '../../components/BookCard';
 import { PredictiveInsights } from '../../components/PredictiveInsights';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { displayCategory } from '@/lib/categories';
 import { API_URL } from '@/lib/api';
 
 interface Stats {
@@ -29,6 +31,10 @@ interface ActivityDay { day: string; count: number; }
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { t, lang } = useLanguage();
+  // Stable ref so the Worker onmessage closure always sees the current locale
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
 
   const [personalBooks, setPersonalBooks] = useState<any[]>([]);
   const [publicBooks,   setPublicBooks]   = useState<any[]>([]);
@@ -42,15 +48,13 @@ export default function DashboardPage() {
   const [isPlaying,     setIsPlaying]     = useState<string | null>(null);
   const [pdfSearch,     setPdfSearch]     = useState('');
   const pdfContentRef = useRef<Record<string, string>>({});
-  // Each summary carries its text + which tier produced it
   const [aiSummary, setAiSummary] = useState<Record<string, { text: string; mode: 'extractive' | 'neural' }>>({});
-  // Each status carries a human message + optional 0-100 download progress
   const [aiStatus,  setAiStatus]  = useState<Record<string, { message: string; progress?: number }>>({});
   const workerRef = useRef<Worker | null>(null);
 
-  const getTtsOffset  = (id: string) => parseInt(sessionStorage.getItem(`tts-offset-${id}`) ?? '0');
-  const setTtsOffset  = (id: string, c: number) => sessionStorage.setItem(`tts-offset-${id}`, String(c));
-  const clearTtsOffset= (id: string) => sessionStorage.removeItem(`tts-offset-${id}`);
+  const getTtsOffset   = (id: string) => parseInt(sessionStorage.getItem(`tts-offset-${id}`) ?? '0');
+  const setTtsOffset   = (id: string, c: number) => sessionStorage.setItem(`tts-offset-${id}`, String(c));
+  const clearTtsOffset = (id: string) => sessionStorage.removeItem(`tts-offset-${id}`);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -60,21 +64,21 @@ export default function DashboardPage() {
 
   const fetchAll = async (token: string) => {
     try {
-      const [r1, r2, r3, r4, r5] = await Promise.all([
+      const [r1, r2, r3, r4, r5] = await Promise.allSettled([
         fetch(`${API_URL}/api/personal-books`,      { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_URL}/api/audiobooks/my-books`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_URL}/api/audiobooks/stats`,    { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_URL}/api/audiobooks/activity`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_URL}/api/listen-later`,        { headers: { 'Authorization': `Bearer ${token}` } }),
       ]);
-      const [d1, d2, d3, d4, d5] = await Promise.all([r1.json(), r2.json(), r3.json(), r4.json(), r5.json()]);
-      if (d1.success) setPersonalBooks(d1.data);
-      if (d2.success) setPublicBooks(d2.data);
-      if (d3.success) setStats(d3.data);
-      if (d4.success) setActivity(d4.data);
-      if (d5.success) setListenLater(d5.data);
+
+      if (r1.status === 'fulfilled') { const d = await r1.value.json(); if (d.success) setPersonalBooks(d.data); }
+      if (r2.status === 'fulfilled') { const d = await r2.value.json(); if (d.success) setPublicBooks(d.data); }
+      if (r3.status === 'fulfilled') { const d = await r3.value.json(); if (d.success) setStats(d.data); }
+      if (r4.status === 'fulfilled') { const d = await r4.value.json(); if (d.success) setActivity(d.data); }
+      if (r5.status === 'fulfilled') { const d = await r5.value.json(); if (d.success) setListenLater(d.data); }
     } catch {
-      toast('Eroare la încărcarea datelor.', 'error');
+      toast(t('errLoadData'), 'error');
     } finally {
       setLoading(false);
     }
@@ -82,7 +86,7 @@ export default function DashboardPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) { toast('Selectează un fișier PDF!', 'error'); return; }
+    if (!file) { toast(t('errNoPdf'), 'error'); return; }
     setUploading(true);
     const token = localStorage.getItem('token');
     const formData = new FormData();
@@ -96,15 +100,15 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        toast('PDF procesat și salvat!');
+        toast(t('pdfSaved'));
         setFile(null);
         setTitle('');
         fetchAll(token || '');
       } else {
-        toast(data.message || 'Eroare la încărcare.', 'error');
+        toast(data.message || t('errUpload'), 'error');
       }
     } catch {
-      toast('Eroare de conexiune.', 'error');
+      toast(t('errConnection'), 'error');
     } finally {
       setUploading(false);
     }
@@ -131,12 +135,12 @@ export default function DashboardPage() {
     if (isPlaying === bookId) { setIsPlaying(null); return; }
 
     const text = await fetchContent(bookId);
-    if (!text) { toast('Eroare la încărcarea conținutului.', 'error'); return; }
+    if (!text) { toast(t('errLoadContent'), 'error'); return; }
 
     const offset    = getTtsOffset(bookId);
     const slice     = text.slice(offset);
     const utterance = new SpeechSynthesisUtterance(slice);
-    utterance.lang  = 'ro-RO';
+    utterance.lang  = lang === 'en' ? 'en-US' : 'ro-RO';
     utterance.rate  = 0.9;
     utterance.onboundary = (event) => {
       if (event.name === 'word') setTtsOffset(bookId, offset + event.charIndex);
@@ -146,7 +150,7 @@ export default function DashboardPage() {
 
     window.speechSynthesis.speak(utterance);
     setIsPlaying(bookId);
-  }, [isPlaying, fetchContent]);
+  }, [isPlaying, fetchContent, lang]);
 
   const handleDeletePdf = async (bookId: string) => {
     const token = localStorage.getItem('token');
@@ -159,11 +163,11 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.success) {
         setPersonalBooks(prev => prev.filter(b => b.id !== bookId));
-        toast('Document șters.');
+        toast(t('docDeleted'));
       } else {
-        toast(data.message || 'Eroare la ștergere.', 'error');
+        toast(data.message || t('errDelete'), 'error');
       }
-    } catch { toast('Eroare de conexiune.', 'error'); }
+    } catch { toast(t('errConnection'), 'error'); }
   };
 
   const removeListenLater = async (audiobookId: string) => {
@@ -174,8 +178,8 @@ export default function DashboardPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       setListenLater(prev => prev.filter(i => i.audiobookId !== audiobookId));
-      toast('Eliminat din lista de ascultare.');
-    } catch { toast('Eroare de conexiune.', 'error'); }
+      toast(t('removedFromLater'));
+    } catch { toast(t('errConnection'), 'error'); }
   };
 
   useEffect(() => {
@@ -186,11 +190,10 @@ export default function DashboardPage() {
   }, []);
 
   const handleSummarize = useCallback(async (bookId: string) => {
-    // Block only while actively processing; allow re-run after a result exists
     if (aiStatus[bookId]) return;
 
     const text = await fetchContent(bookId);
-    if (!text) { toast('Conținut indisponibil.', 'error'); return; }
+    if (!text) { toast(t('errContentUnavail'), 'error'); return; }
 
     if (!workerRef.current) {
       try {
@@ -199,28 +202,22 @@ export default function DashboardPage() {
           { type: 'module' },
         );
       } catch {
-        toast('Funcția AI nu este disponibilă. Rulați: npm install @xenova/transformers', 'error');
+        toast(t('errAiUnavail'), 'error');
         return;
       }
 
       workerRef.current.onmessage = (e) => {
         const { type, bookId: bid, message, summary, progress } = e.data;
-
         if (type === 'extractive') {
-          // Instant tier-1 result — show immediately and clear the loading state
           setAiSummary(prev => ({ ...prev, [bid]: { text: summary, mode: 'extractive' } }));
-          setAiStatus(prev => ({ ...prev, [bid]: { message: 'Rezumat rapid gata. Îmbunătățește cu AI…' } }));
+          setAiStatus(prev => ({ ...prev, [bid]: { message: tRef.current('quickSummaryDone') } }));
         }
-        if (type === 'status') {
-          setAiStatus(prev => ({ ...prev, [bid]: { message, progress } }));
-        }
-        if (type === 'result') {
-          // Neural upgrade — replace the extractive result
+        if (type === 'status')  { setAiStatus(prev => ({ ...prev, [bid]: { message, progress } })); }
+        if (type === 'result')  {
           setAiSummary(prev => ({ ...prev, [bid]: { text: summary, mode: 'neural' } }));
           setAiStatus(prev => { const s = { ...prev }; delete s[bid]; return s; });
         }
         if (type === 'neural_error') {
-          // Neural failed — the extractive summary is already shown; just stop the spinner
           setAiStatus(prev => { const s = { ...prev }; delete s[bid]; return s; });
         }
         if (type === 'error') {
@@ -234,7 +231,7 @@ export default function DashboardPage() {
       };
     }
 
-    setAiStatus(prev => ({ ...prev, [bookId]: { message: 'Inițializează…' } }));
+    setAiStatus(prev => ({ ...prev, [bookId]: { message: t('aiInitializing') } }));
     workerRef.current.postMessage({ text, bookId });
   }, [aiStatus, fetchContent]);
 
@@ -257,49 +254,53 @@ export default function DashboardPage() {
     : null;
 
   const maxActivity = Math.max(...activity.map(a => a.count), 1);
-
   const filteredPdfs = pdfSearch.trim()
     ? personalBooks.filter(b => b.title.toLowerCase().includes(pdfSearch.toLowerCase()))
     : personalBooks;
-
   const activeDays = useMemo(() => activity.filter(a => a.count > 0).length, [activity]);
 
+  // Challenges are rebuilt whenever language changes (t is stable per lang)
   const challenges = useMemo(() => {
     if (!stats) return [];
     const catCount = Object.keys(stats.byCategory).length;
     return [
       {
-        id: 'first', emoji: '🎯', label: 'Primul Pas',
-        desc: 'Completează prima carte audio',
+        id: 'first', emoji: '🎯',
+        label: t('ch1Label'), desc: t('ch1Desc'),
         current: Math.min(stats.completed, 1), target: 1,
-        curLabel: `${stats.completed} completate`, tgtLabel: '1 carte',
+        curLabel: `${stats.completed} ${t('booksCompletedOf')}`,
+        tgtLabel: `1 ${t('book')}`,
       },
       {
-        id: 'avid', emoji: '📚', label: 'Cititor Avid',
-        desc: 'Completează 5 cărți audio',
+        id: 'avid', emoji: '📚',
+        label: t('ch2Label'), desc: t('ch2Desc'),
         current: Math.min(stats.completed, 5), target: 5,
-        curLabel: `${stats.completed}/5 cărți`, tgtLabel: '5 cărți',
+        curLabel: `${stats.completed}/5 ${t('books')}`,
+        tgtLabel: `5 ${t('books')}`,
       },
       {
-        id: 'marathon', emoji: '⏱️', label: 'Maratonist',
-        desc: 'Ascultă cel puțin 5 ore total',
+        id: 'marathon', emoji: '⏱️',
+        label: t('ch3Label'), desc: t('ch3Desc'),
         current: Math.min(stats.totalSeconds, 18000), target: 18000,
-        curLabel: formatHours(stats.totalSeconds), tgtLabel: '5h',
+        curLabel: formatHours(stats.totalSeconds),
+        tgtLabel: '5h',
       },
       {
-        id: 'explorer', emoji: '🌍', label: 'Explorator',
-        desc: 'Explorează 3 categorii diferite',
+        id: 'explorer', emoji: '🌍',
+        label: t('ch4Label'), desc: t('ch4Desc'),
         current: Math.min(catCount, 3), target: 3,
-        curLabel: `${catCount} ${catCount === 1 ? 'categorie' : 'categorii'}`, tgtLabel: '3 categorii',
+        curLabel: `${catCount} ${catCount === 1 ? t('categoryUnit') : t('categoriesUnit')}`,
+        tgtLabel: `3 ${t('categoriesUnit')}`,
       },
       {
-        id: 'streak', emoji: '🔥', label: 'Săptămâna Activă',
-        desc: 'Fii activ 5 din ultimele 7 zile',
+        id: 'streak', emoji: '🔥',
+        label: t('ch5Label'), desc: t('ch5Desc'),
         current: Math.min(activeDays, 5), target: 5,
-        curLabel: `${activeDays}/7 zile active`, tgtLabel: '5 zile',
+        curLabel: `${activeDays}/7 ${t('daysUnit')}`,
+        tgtLabel: `5 ${t('daysUnit')}`,
       },
     ];
-  }, [stats, activeDays]);
+  }, [stats, activeDays, t]);
 
   if (loading) return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-8">
@@ -321,34 +322,30 @@ export default function DashboardPage() {
           className="text-3xl font-bold text-foreground leading-tight"
           style={{ fontFamily: 'var(--font-fraunces)' }}
         >
-          Spațiul meu
+          {t('mySpace')}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Statisticile tale, progresul în librărie și documentele personale
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">{t('dashSubtitle')}</p>
       </div>
 
       {/* ── Stats cards ── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { icon: Clock,    label: 'Total ascultat',      value: formatHours(stats.totalSeconds), accent: 'oklch(0.68 0.14 185)', glow: 'oklch(0.68 0.14 185 / 0.15)' },
-            { icon: BookOpen, label: 'Cărți începute',      value: stats.booksStarted,              accent: 'oklch(0.65 0.10 280)', glow: 'oklch(0.65 0.10 280 / 0.15)' },
-            { icon: Trophy,   label: 'Finalizate',           value: stats.completed,                 accent: 'var(--sage)',          glow: 'var(--glow-sage)' },
-            { icon: Tag,      label: 'Categorie preferată', value: topCategory || '—',              accent: 'var(--gold)',          glow: 'var(--glow-gold)' },
+            { icon: Clock,    label: t('totalListened'),    value: formatHours(stats.totalSeconds), accent: 'oklch(0.68 0.14 185)', glow: 'oklch(0.68 0.14 185 / 0.15)' },
+            { icon: BookOpen, label: t('booksStartedStat'), value: stats.booksStarted,              accent: 'oklch(0.65 0.10 280)', glow: 'oklch(0.65 0.10 280 / 0.15)' },
+            { icon: Trophy,   label: t('booksCompleted'),   value: stats.completed,                 accent: 'var(--sage)',          glow: 'var(--glow-sage)' },
+            { icon: Tag,      label: t('favoriteCategory'), value: topCategory ? displayCategory(topCategory, lang) : '—', accent: 'var(--gold)', glow: 'var(--glow-gold)' },
           ].map(({ icon: Icon, label, value, accent, glow }) => (
             <div
               key={label}
               className="relative bg-card rounded-2xl p-5 flex flex-col gap-3 overflow-hidden border border-border/60 shadow-sm"
             >
-              {/* Color accent top bar */}
               <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" style={{ background: accent }} />
               <Icon className="size-4" style={{ color: accent }} />
               <div>
                 <p className="text-2xl font-bold text-foreground leading-none tabular-nums">{value}</p>
                 <p className="text-xs text-muted-foreground mt-1.5">{label}</p>
               </div>
-              {/* Subtle glow bg */}
               <div className="absolute inset-0 pointer-events-none rounded-2xl" style={{ background: `radial-gradient(ellipse at top left, ${glow} 0%, transparent 60%)` }} />
             </div>
           ))}
@@ -360,9 +357,9 @@ export default function DashboardPage() {
         <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <BarChart2 className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Activitate săptămânală</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('weeklyActivity')}</h2>
           </div>
-          <p className="text-xs text-muted-foreground mb-5">Cărți ascultate în ultimele 7 zile</p>
+          <p className="text-xs text-muted-foreground mb-5">{t('booksListened7Days')}</p>
           <div className="flex items-end gap-2 h-24">
             {activity.map(({ day, count }) => (
               <div key={day} className="flex-1 flex flex-col items-center gap-2">
@@ -375,9 +372,13 @@ export default function DashboardPage() {
                       : 'linear-gradient(to top, var(--sage), var(--gold))',
                     boxShadow: count > 0 ? '0 0 8px var(--glow-sage)' : 'none',
                   }}
-                  title={`${count} ${count === 1 ? 'carte' : 'cărți'}`}
+                  title={`${count} ${count === 1 ? t('book') : t('books')}`}
                 />
-                <span className="text-[10px] text-muted-foreground capitalize font-medium">{day}</span>
+                <span className="text-[10px] text-muted-foreground capitalize font-medium">
+                  {/^\d{4}-\d{2}-\d{2}$/.test(day)
+                    ? new Date(day + 'T12:00:00').toLocaleDateString(lang === 'en' ? 'en-US' : 'ro-RO', { weekday: 'short' })
+                    : day}
+                </span>
               </div>
             ))}
           </div>
@@ -398,7 +399,7 @@ export default function DashboardPage() {
               className="font-semibold text-foreground"
               style={{ fontFamily: 'var(--font-fraunces)' }}
             >
-              Provocări
+              {t('challenges')}
             </h2>
             <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
               {challenges.filter(c => c.current >= c.target).length}/{challenges.length}
@@ -427,7 +428,7 @@ export default function DashboardPage() {
                     </div>
                     {done && (
                       <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                        ✓ Gata
+                        {t('doneBadge')}
                       </span>
                     )}
                   </div>
@@ -460,7 +461,7 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-2.5">
             <Clock className="size-4 text-muted-foreground" />
-            <h2 className="font-semibold text-foreground">Listen Later</h2>
+            <h2 className="font-semibold text-foreground">{t('listenLaterSection')}</h2>
             <Badge variant="secondary" className="text-xs rounded-full font-mono">{listenLater.length}</Badge>
           </div>
           <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
@@ -490,7 +491,7 @@ export default function DashboardPage() {
       <div className="space-y-4">
         <div className="flex items-center gap-2.5">
           <Headphones className="size-4 text-muted-foreground" />
-          <h2 className="font-semibold text-foreground">Continuă ascultarea</h2>
+          <h2 className="font-semibold text-foreground">{t('continueListening')}</h2>
           {publicBooks.length > 0 && (
             <Badge variant="secondary" className="text-xs rounded-full font-mono">{publicBooks.length}</Badge>
           )}
@@ -500,11 +501,11 @@ export default function DashboardPage() {
           <div className="flex flex-col items-center justify-center py-14 text-center border-2 border-dashed border-border/40 rounded-2xl gap-3">
             <Headphones className="size-10 text-muted-foreground/25" />
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Nu ai început nicio carte</p>
-              <p className="text-xs text-muted-foreground/60 mt-0.5">Explorează librăria pentru a găsi prima ta carte</p>
+              <p className="text-sm font-medium text-muted-foreground">{t('noBookStarted')}</p>
+              <p className="text-xs text-muted-foreground/60 mt-0.5">{t('exploreLibraryHint')}</p>
             </div>
             <Button variant="outline" size="sm" asChild className="mt-1 rounded-xl">
-              <Link href="/">Explorează librăria</Link>
+              <Link href="/">{t('exploreLibraryBtn')}</Link>
             </Button>
           </div>
         ) : (
@@ -536,7 +537,7 @@ export default function DashboardPage() {
               className="font-semibold text-foreground"
               style={{ fontFamily: 'var(--font-fraunces)' }}
             >
-              Documentele mele
+              {t('myDocuments')}
             </h2>
             <Badge variant="secondary" className="text-xs rounded-full font-mono">
               {personalBooks.length}/50
@@ -546,7 +547,7 @@ export default function DashboardPage() {
             <div className="relative max-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <Input
-                placeholder="Caută…"
+                placeholder={t('searchDocs')}
                 value={pdfSearch}
                 onChange={e => setPdfSearch(e.target.value)}
                 className="pl-9 h-8 text-xs rounded-xl border-border/70"
@@ -555,54 +556,60 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── How it works (onboarding card) ── */}
+        {/* ── How it works ── */}
         <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex gap-4">
           <div className="shrink-0 size-9 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mt-0.5">
             <Info className="size-4 text-primary" />
           </div>
           <div className="space-y-2.5 min-w-0">
-            <p className="font-semibold text-sm text-foreground">Cum funcționează documentele personale?</p>
+            <p className="font-semibold text-sm text-foreground">{t('howItWorksTitle')}</p>
             <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-muted-foreground">
               <div className="flex items-start gap-2">
                 <span className="text-base leading-none shrink-0">📄</span>
-                <p>Încarcă <strong className="text-foreground">notițe de curs</strong>, articole sau rapoarte în format PDF cu text selectabil.</p>
+                <p>
+                  {t('how1a')} <strong className="text-foreground">{t('how1Bold')}</strong>{t('how1b')}
+                </p>
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-base leading-none shrink-0">🔊</span>
-                <p>Textul este extras și poate fi <strong className="text-foreground">ascultat cu voce sintetizată</strong> — ideal pentru studiu fără ecran.</p>
+                <p>
+                  {t('how2a')} <strong className="text-foreground">{t('how2Bold')}</strong>{t('how2b')}
+                </p>
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-base leading-none shrink-0">⚡</span>
-                <p><strong className="text-foreground">Rezumatul rapid</strong> apare în sub o secundă, fără descărcări.</p>
+                <p>
+                  {t('how3Bold') && <strong className="text-foreground">{t('how3Bold')}</strong>}{t('how3b')}
+                </p>
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-base leading-none shrink-0">🤖</span>
-                <p><strong className="text-foreground">Modelul neural</strong> (~40 MB, descărcat o singură dată) produce un rezumat mai rafinat în 1–2 minute.</p>
+                <p>
+                  {t('how4Bold') && <strong className="text-foreground">{t('how4Bold')}</strong>}{t('how4b')}
+                </p>
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground/60">
-              ⚠️ Scanările și documentele scrise de mână nu sunt suportate — este necesară prezența textului selectabil în PDF.
-            </p>
+            <p className="text-[11px] text-muted-foreground/60">⚠️ {t('howWarning')}</p>
           </div>
         </div>
 
         {/* ── Upload form ── */}
         <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-sm space-y-4">
-          <p className="text-sm font-semibold text-foreground">Încarcă document nou</p>
+          <p className="text-sm font-semibold text-foreground">{t('uploadNewDoc')}</p>
           <form onSubmit={handleUpload} className="grid sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
             <div className="space-y-1.5">
-              <Label htmlFor="pdf-title" className="text-xs text-muted-foreground">Titlu document</Label>
+              <Label htmlFor="pdf-title" className="text-xs text-muted-foreground">{t('docTitleLabel')}</Label>
               <Input
                 id="pdf-title"
                 required
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="ex: Curs Algoritmi — S3"
+                placeholder={t('docTitlePlaceholder')}
                 className="h-9 rounded-xl border-border/70 focus-visible:ring-2 focus-visible:ring-primary/30"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pdf-file" className="text-xs text-muted-foreground">Fișier PDF</Label>
+              <Label htmlFor="pdf-file" className="text-xs text-muted-foreground">{t('pdfFileLabel')}</Label>
               <input
                 id="pdf-file"
                 type="file"
@@ -618,14 +625,15 @@ export default function DashboardPage() {
               className="h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 whitespace-nowrap"
             >
               {uploading
-                ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Se procesează…</>
-                : <><Upload className="size-3.5 mr-1.5" />Încarcă</>
+                ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />{t('processing')}</>
+                : <><Upload className="size-3.5 mr-1.5" />{t('uploadBtn')}</>
               }
             </Button>
           </form>
           {file && (
             <p className="text-xs text-muted-foreground">
-              Fișier selectat: <span className="text-foreground font-medium">{file.name}</span>
+              {t('selectedFile')}{' '}
+              <span className="text-foreground font-medium">{file.name}</span>
               {' '}({(file.size / 1024 / 1024).toFixed(1)} MB)
             </p>
           )}
@@ -637,12 +645,10 @@ export default function DashboardPage() {
             <FileText className="size-10 text-muted-foreground/25" />
             <div>
               <p className="text-sm font-medium text-muted-foreground">
-                {personalBooks.length === 0 ? 'Niciun document încărcat' : 'Niciun rezultat'}
+                {personalBooks.length === 0 ? t('noDocUploaded') : t('noBooksFound')}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-0.5">
-                {personalBooks.length === 0
-                  ? 'Folosește formularul de mai sus pentru a adăuga primul tău PDF'
-                  : 'Încearcă un alt termen de căutare'}
+                {personalBooks.length === 0 ? t('addFirstPdfHint') : t('tryAnotherSearch')}
               </p>
             </div>
           </div>
@@ -668,7 +674,7 @@ export default function DashboardPage() {
                       <p className="font-semibold text-sm text-foreground truncate leading-snug">{book.title}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-xs text-muted-foreground">
-                          {new Date(book.createdAt).toLocaleDateString('ro-RO')}
+                          {new Date(book.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'ro-RO')}
                         </span>
                         <span className="text-border text-xs">·</span>
                         <span className="text-xs text-muted-foreground font-mono">
@@ -681,8 +687,8 @@ export default function DashboardPage() {
                               : 'bg-muted text-muted-foreground border-border/60'
                           }`}>
                             {isNeural
-                              ? <><Sparkles className="size-2.5" />Neural AI</>
-                              : <><Zap className="size-2.5" />Rapid</>
+                              ? <><Sparkles className="size-2.5" />{t('neuralSummaryTitle').split(' ').slice(-2).join(' ')}</>
+                              : <><Zap className="size-2.5" />{t('quickSummaryBadge')}</>
                             }
                           </span>
                         )}
@@ -690,7 +696,7 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => handleDeletePdf(book.id)}
-                      aria-label="Șterge document"
+                      aria-label={t('deleteDoc')}
                       className="shrink-0 opacity-0 group-hover/card:opacity-100 flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
                     >
                       <Trash2 className="size-3.5" />
@@ -706,8 +712,8 @@ export default function DashboardPage() {
                       className="flex-1 rounded-xl h-8 text-xs"
                     >
                       {isPlaying === book.id
-                        ? <><Square  className="size-3.5 mr-1.5" />Oprește</>
-                        : <><Volume2 className="size-3.5 mr-1.5" />Ascultă</>
+                        ? <><Square  className="size-3.5 mr-1.5" />{t('stopAction')}</>
+                        : <><Volume2 className="size-3.5 mr-1.5" />{t('listenAction')}</>
                       }
                     </Button>
                     <Button
@@ -720,15 +726,15 @@ export default function DashboardPage() {
                       }`}
                     >
                       {processing
-                        ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Procesează…</>
+                        ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />{t('processing')}</>
                         : summary
-                          ? <><Sparkles className="size-3.5 mr-1.5" />Regenerează</>
-                          : <><Sparkles className="size-3.5 mr-1.5" />Rezumă</>
+                          ? <><Sparkles className="size-3.5 mr-1.5" />{t('regenerateAction')}</>
+                          : <><Sparkles className="size-3.5 mr-1.5" />{t('summarizeAction')}</>
                       }
                     </Button>
                   </div>
 
-                  {/* ── Progress bar (model download) ── */}
+                  {/* Progress bar (model download) */}
                   {status?.progress != null && (
                     <div className="px-4 pb-3 space-y-1.5">
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -741,7 +747,7 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {/* ── Spinner (no progress number) ── */}
+                  {/* Spinner (no progress number) */}
                   {status && status.progress == null && (
                     <div className="px-4 pb-3 flex items-center gap-2 text-xs text-primary">
                       <Loader2 className="size-3 animate-spin shrink-0" />
@@ -749,7 +755,7 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {/* ── Summary panel ── */}
+                  {/* Summary panel */}
                   <AnimatePresence>
                     {summary && (
                       <motion.div
@@ -767,14 +773,13 @@ export default function DashboardPage() {
                               : <Zap className="size-3 text-muted-foreground" />
                             }
                             <span className={`text-[10px] font-bold uppercase tracking-widest ${isNeural ? 'text-primary' : 'text-muted-foreground'}`}>
-                              {isNeural ? 'Rezumat Neural AI' : 'Rezumat Rapid'}
+                              {isNeural ? t('neuralSummaryTitle') : t('quickSummaryTitle')}
                             </span>
                           </div>
-                          {/* Show if still trying to upgrade to neural */}
                           {!isNeural && processing && (
                             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                               <Loader2 className="size-2.5 animate-spin" />
-                              Se îmbunătățește…
+                              {t('upgradingToNeural')}
                             </span>
                           )}
                         </div>

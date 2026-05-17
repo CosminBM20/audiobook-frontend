@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Headphones, Search, Bell, User, Menu, Moon, Sun, X, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearch } from './SearchContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { API_URL } from '@/lib/api';
 
 interface AppHeaderProps {
@@ -23,6 +24,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
   const router   = useRouter();
   const pathname = usePathname();
   const { search, setSearch } = useSearch();
+  const { lang, setLang, t } = useLanguage();
   const [userName,      setUserName]      = useState('');
   const [isDark,        setIsDark]        = useState(false);
   const [showNotifs,    setShowNotifs]    = useState(false);
@@ -32,9 +34,21 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
+  // Runs synchronously before first paint — eliminates the avatar flash.
+  // The existing useEffect below keeps state in sync on subsequent navigations.
+  useLayoutEffect(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) setUserName(JSON.parse(raw).name || '');
+    } catch {}
+    setIsDark(document.documentElement.classList.contains('dark'));
+  }, []);
+
   useEffect(() => {
-    const user = localStorage.getItem('user');
-    if (user) setUserName(JSON.parse(user).name || '');
+    try {
+      const raw = localStorage.getItem('user');
+      setUserName(raw ? JSON.parse(raw).name || '' : '');
+    } catch {}
     setIsDark(document.documentElement.classList.contains('dark'));
     const seenAt = localStorage.getItem('notifSeenAt');
     if (!seenAt || Date.now() - parseInt(seenAt) > 24 * 60 * 60 * 1000) setHasUnread(true);
@@ -89,7 +103,8 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
     setShowNotifs(false);
   };
 
-  const initials = userName ? userName.charAt(0).toUpperCase() : null;
+  // Derived directly from userName — same field as the sidebar uses
+  const initials = userName.trim().charAt(0).toUpperCase() || null;
 
   return (
     <header className="fixed top-0 left-0 right-0 h-16 z-50 flex items-center px-4 lg:px-6 bg-background/85 backdrop-blur-xl border-b border-border/60">
@@ -127,7 +142,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
               setSearch(e.target.value);
               if (pathname !== '/') router.push('/');
             }}
-            placeholder="Caută cărți, autori..."
+            placeholder={t('searchPlaceholder')}
             className={`w-full bg-muted/70 rounded-xl pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent outline-none transition-all duration-200 ${
               searchFocused
                 ? 'bg-card border-primary/40 shadow-[0_0_0_3px_var(--glow-sage)]'
@@ -139,6 +154,28 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
 
       {/* ── RIGHT: actions ───────────────────────────────────────────────── */}
       <div className="flex items-center gap-1.5 flex-1 justify-end">
+
+        {/* RO / EN language toggle */}
+        <div
+          className="hidden sm:flex items-center rounded-lg border border-border/60 p-0.5 bg-muted/50 gap-0.5"
+          role="group"
+          aria-label="Language / Limbă"
+        >
+          {(['ro', 'en'] as const).map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              aria-pressed={lang === l}
+              className={`px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wide transition-all ${
+                lang === l
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
 
         {/* Dark mode toggle */}
         <button
@@ -170,16 +207,15 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
 
               {/* Header row */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-                <span className="text-sm font-semibold text-foreground">Notificări</span>
+                <span className="text-sm font-semibold text-foreground">{t('notifications')}</span>
                 <div className="flex items-center gap-1">
                   {notifBooks.length > 0 && (
                     <button
                       onClick={clearAllNotifs}
                       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors px-2 py-1 rounded-lg hover:bg-destructive/10"
-                      title="Șterge toate"
                     >
                       <Trash2 className="size-3" />
-                      <span>Șterge tot</span>
+                      <span>{t('clearAll')}</span>
                     </button>
                   )}
                   <button
@@ -194,16 +230,16 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
               {/* Notification list */}
               <div className="divide-y divide-border/60 max-h-[360px] overflow-y-auto">
                 {!notifLoaded ? (
-                  <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">Se încarcă…</div>
+                  <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">{t('loading')}</div>
                 ) : notifBooks.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
                     <Bell className="size-7 opacity-20" />
-                    <p className="text-sm">Nicio notificare</p>
+                    <p className="text-sm">{t('noNotifications')}</p>
                   </div>
                 ) : (
                   <>
                     <div className="px-4 pt-3 pb-1.5">
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Nou în bibliotecă</p>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">{t('newInLibrary')}</p>
                     </div>
                     {notifBooks.map(book => (
                       <div key={book.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 transition-colors group/notif">
@@ -236,7 +272,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
 
               <div className="px-4 py-2.5 border-t border-border/60 bg-muted/30">
                 <Link href="/" onClick={() => setShowNotifs(false)} className="text-xs text-muted-foreground hover:text-primary transition-colors">
-                  Vezi toată librăria →
+                  {t('seeFullLibrary')}
                 </Link>
               </div>
             </div>

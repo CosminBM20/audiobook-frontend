@@ -49,15 +49,15 @@ export const BookCard = React.memo(function BookCard({
     >
       <article className="bg-card rounded-2xl overflow-hidden flex flex-col shadow-sm transition-all duration-300 motion-safe:hover:shadow-[0_8px_28px_oklch(0_0_0_/_0.18),_0_2px_8px_var(--glow-sage)] motion-safe:hover:-translate-y-1">
 
-        {/* Cover image */}
-        <div className="relative w-full aspect-[2/3]">
+        {/* Cover image — overflow-hidden clips the scaled image on hover */}
+        <div className="relative w-full aspect-[2/3] overflow-hidden bg-muted">
           <Image
-            src={coverImageUrl || 'https://placehold.co/300x400'}
+            src={coverImageUrl || 'https://placehold.co/300x450'}
             alt=""
             role="presentation"
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-            className="object-cover transition-transform duration-500 motion-safe:group-hover:scale-[1.03] [will-change:transform]"
+            className="object-cover object-top transition-transform duration-500 motion-safe:group-hover:scale-[1.03] [will-change:transform]"
             placeholder={blurDataURL ? 'blur' : 'empty'}
             blurDataURL={blurDataURL}
           />
@@ -65,17 +65,17 @@ export const BookCard = React.memo(function BookCard({
           {/* Bottom gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-          {/* Play button */}
+          {/* Play button — wrapper is pointer-events-none so it never blocks the heart/bookmark */}
           {onPlay && (
-            <button
-              onClick={e => { e.preventDefault(); e.stopPropagation(); onPlay(e); }}
-              aria-label={`Redă ${title}`}
-              className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-            >
-              <span className="flex size-11 items-center justify-center rounded-full bg-primary/90 backdrop-blur-sm shadow-[0_4px_20px_var(--glow-sage-strong)] motion-safe:scale-90 motion-safe:group-hover:scale-100 transition-transform duration-200 hover:bg-primary active:scale-95">
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 pointer-events-none">
+              <button
+                onClick={e => { e.preventDefault(); e.stopPropagation(); onPlay(e); }}
+                aria-label={`Redă ${title}`}
+                className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-primary/90 backdrop-blur-sm shadow-[0_4px_20px_var(--glow-sage-strong)] motion-safe:scale-90 motion-safe:group-hover:scale-100 transition-transform duration-200 hover:bg-primary active:scale-95"
+              >
                 <Play className="size-4 text-primary-foreground ml-0.5" aria-hidden="true" fill="currentColor" />
-              </span>
-            </button>
+              </button>
+            </div>
           )}
 
           {/* "NOU" badge */}
@@ -91,10 +91,10 @@ export const BookCard = React.memo(function BookCard({
           {/* Favorite toggle */}
           {onFavoriteToggle && (
             <button
-              onClick={onFavoriteToggle}
+              onClick={e => { e.stopPropagation(); e.preventDefault(); onFavoriteToggle(e); }}
               aria-label={isFavorite ? `Elimină ${title} din favorite` : `Adaugă ${title} la favorite`}
               aria-pressed={isFavorite}
-              className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="absolute top-2 right-2 z-20 flex size-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Heart
                 className={`size-3.5 transition-colors duration-200 ${
@@ -109,9 +109,9 @@ export const BookCard = React.memo(function BookCard({
           {/* Listen-later button */}
           {onListenLater && (
             <button
-              onClick={onListenLater}
+              onClick={e => { e.stopPropagation(); e.preventDefault(); onListenLater(e); }}
               aria-label={`Adaugă ${title} la lista de ascultare`}
-              className="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="absolute bottom-2 right-2 z-20 flex size-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <BookmarkPlus className="size-3.5 text-white" strokeWidth={1.5} aria-hidden="true" />
             </button>

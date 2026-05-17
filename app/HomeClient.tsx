@@ -7,8 +7,10 @@ import { BookCard } from '../components/BookCard';
 import { BookListRow } from '../components/BookListRow';
 import { useSearch } from '../components/SearchContext';
 import { usePlayerControls } from '../contexts/PlayerContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { toCanonical, displayCategory } from '@/lib/categories';
 import { API_URL } from '@/lib/api';
-import { LayoutGrid, List, ArrowUpAZ, Clock3, RotateCcw, User, Play, X } from 'lucide-react';
+import { LayoutGrid, List, ArrowUpAZ, Clock3, RotateCcw, User, Play, X, Heart } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Audiobook } from './page';
@@ -27,6 +29,9 @@ interface LastBook {
 type SortMode = 'default' | 'title' | 'author' | 'duration';
 type ViewMode = 'grid' | 'list';
 
+// Delegate typo-correction to the canonical categories table
+const fixCategory = toCanonical;
+
 const gridContainer: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.04, delayChildren: 0.05 } },
@@ -40,9 +45,12 @@ const gridItem: Variants = {
 export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[] }) {
   const { search }    = useSearch();
   const { playBook }  = usePlayerControls();
+  const { t, lang }   = useLanguage();
   const deferredSearch = useDeferredValue(search);
 
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory,  setSelectedCategory]  = useState('All');
+  const [selectedLanguage,  setSelectedLanguage]  = useState<'all' | 'ro' | 'en'>('all');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [sortMode,         setSortMode]         = useState<SortMode>('default');
   const [viewMode,         setViewMode]         = useState<ViewMode>('grid');
   const [favorites,        setFavorites]        = useState<Set<string>>(new Set());
@@ -97,6 +105,8 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     if (!token) { toast('Autentifică-te pentru a folosi această funcție.', 'error'); return; }
 
     const wasFav = favorites.has(bookId);
+
+    // Optimistic update
     setFavorites(prev => {
       const s = new Set(prev);
       wasFav ? s.delete(bookId) : s.add(bookId);
@@ -104,18 +114,16 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     });
 
     try {
-      const res = await fetch(
-        wasFav ? `${API_URL}/api/favorites/${bookId}` : `${API_URL}/api/favorites`,
-        {
-          method:  wasFav ? 'DELETE' : 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body:    !wasFav ? JSON.stringify({ audiobookId: bookId }) : undefined,
-        }
-      );
+      const res = await fetch(`${API_URL}/api/favorites/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ audiobookId: bookId }),
+      });
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
       toast(wasFav ? 'Eliminat din favorite.' : 'Adăugat la favorite!', wasFav ? 'info' : 'success');
     } catch {
+      // Revert on failure
       setFavorites(prev => {
         const s = new Set(prev);
         wasFav ? s.add(bookId) : s.delete(bookId);
@@ -141,13 +149,22 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     } catch { toast('Eroare de conexiune.', 'error'); }
   }, []);
 
-  const categories = useMemo(
-    () => ['All', ...Array.from(new Set(books.map(b => b.category.name)))],
+  // Apply diacritic corrections before computing unique categories
+  const normalizedBooks = useMemo(
+    () => books.map(b => ({
+      ...b,
+      category: { ...b.category, name: fixCategory(b.category.name) },
+    })),
     [books],
   );
 
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(normalizedBooks.map(b => b.category.name)))],
+    [normalizedBooks],
+  );
+
   const filteredBooks = useMemo(() => {
-    let list = books.filter(book => {
+    let list = normalizedBooks.filter(book => {
       const q = deferredSearch.toLowerCase();
       const matchesSearch =
         !q ||
@@ -155,7 +172,12 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
         book.author.name.toLowerCase().includes(q);
       const matchesCategory =
         selectedCategory === 'All' || book.category.name === selectedCategory;
-      return matchesSearch && matchesCategory;
+      // Strict match: books without a language field are treated as 'ro'.
+      // When 'en' is selected, only books explicitly marked 'en' pass through.
+      const bookLang = book.language ?? 'ro';
+      const matchesLanguage  = selectedLanguage === 'all' || bookLang === selectedLanguage;
+      const matchesFavorites = !showFavoritesOnly || favorites.has(book.id);
+      return matchesSearch && matchesCategory && matchesLanguage && matchesFavorites;
     });
 
     if (sortMode === 'title')    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
@@ -163,15 +185,15 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     if (sortMode === 'duration') list = [...list].sort((a, b) => a.durationSeconds - b.durationSeconds);
 
     return list;
-  }, [books, deferredSearch, selectedCategory, sortMode]);
+  }, [normalizedBooks, deferredSearch, selectedCategory, selectedLanguage, sortMode, showFavoritesOnly, favorites]);
 
-  const gridKey = `${selectedCategory}-${sortMode}-${deferredSearch}`;
+  const gridKey = `${selectedCategory}-${selectedLanguage}-${sortMode}-${deferredSearch}-${showFavoritesOnly}`;
 
   const sortButtons: { mode: SortMode; label: string; icon: React.ReactNode }[] = [
-    { mode: 'default',  label: 'Default', icon: <RotateCcw className="size-3" /> },
-    { mode: 'title',    label: 'A–Z',     icon: <ArrowUpAZ  className="size-3" /> },
-    { mode: 'author',   label: 'Autor',   icon: <User       className="size-3" /> },
-    { mode: 'duration', label: 'Durată',  icon: <Clock3     className="size-3" /> },
+    { mode: 'default',  label: t('sortDefault'),  icon: <RotateCcw className="size-3" /> },
+    { mode: 'title',    label: t('sortTitle'),    icon: <ArrowUpAZ  className="size-3" /> },
+    { mode: 'author',   label: t('sortAuthor'),   icon: <User       className="size-3" /> },
+    { mode: 'duration', label: t('sortDuration'), icon: <Clock3     className="size-3" /> },
   ];
 
   return (
@@ -192,7 +214,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
               <Image src={lastBook.audiobook.coverImageUrl} alt={lastBook.audiobook.title} fill sizes="40px" className="object-cover" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-primary uppercase tracking-widest mb-0.5">Continuă ascultarea</p>
+              <p className="text-[10px] font-semibold text-primary uppercase tracking-widest mb-0.5">{t('continueListening')}</p>
               <p className="text-sm font-semibold text-foreground truncate">{lastBook.audiobook.title}</p>
               <div className="flex items-center gap-2 mt-1.5">
                 <div className="h-1 bg-muted rounded-full overflow-hidden w-24">
@@ -211,7 +233,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all hover:-translate-y-0.5 shrink-0 shadow-sm shadow-primary/20"
             >
               <Play className="size-3 fill-current" aria-hidden="true" />
-              Reia
+              {t('resume')}
             </Link>
             <button
               onClick={() => { setShowBanner(false); sessionStorage.setItem('bannerDismissed', '1'); }}
@@ -231,17 +253,62 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
             className="text-3xl font-bold text-foreground leading-tight tracking-tight"
             style={{ fontFamily: 'var(--font-fraunces)' }}
           >
-            Librărie
+            {t('library')}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5" aria-live="polite" aria-atomic="true">
             {booksLoading
-              ? 'Se încarcă…'
-              : `${filteredBooks.length} ${filteredBooks.length === 1 ? 'carte' : 'cărți'}`}
+              ? t('loading')
+              : `${filteredBooks.length} ${filteredBooks.length === 1 ? t('book') : t('books')}`}
             {!booksLoading && search !== deferredSearch && ' …'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Favorites toggle */}
+          <button
+            onClick={() => setShowFavoritesOnly(p => !p)}
+            aria-pressed={showFavoritesOnly}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+              showFavoritesOnly
+                ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                : 'border-border/70 bg-card text-muted-foreground hover:text-foreground hover:bg-muted/60'
+            }`}
+          >
+            <Heart
+              className={`size-3 transition-colors ${showFavoritesOnly ? 'fill-red-500 text-red-500' : ''}`}
+              strokeWidth={1.5}
+            />
+            {t('myFavorites')}
+          </button>
+
+          {/* Visual separator */}
+          <div className="w-px h-5 bg-border/60 self-center hidden sm:block" aria-hidden="true" />
+
+          {/* Language filter */}
+          <div role="group" aria-label="Filtrare după limbă" className="flex items-center gap-0.5 rounded-xl border border-border/70 p-0.5 bg-card">
+            {([
+              { value: 'all', label: t('allLanguages') },
+              { value: 'ro',  label: t('langRo') },
+              { value: 'en',  label: t('langEn') },
+            ] as const).map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setSelectedLanguage(value)}
+                aria-pressed={selectedLanguage === value}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedLanguage === value
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Visual separator between filter groups */}
+          <div className="w-px h-5 bg-border/60 self-center hidden sm:block" aria-hidden="true" />
+
           {/* Sort */}
           <div role="group" aria-label="Sortare cărți" className="flex items-center gap-0.5 rounded-xl border border-border/70 p-0.5 bg-card">
             {sortButtons.map(({ mode, label, icon }) => (
@@ -297,7 +364,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
                 : 'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-foreground bg-card'
             }`}
           >
-            {cat}
+            {cat === 'All' ? t('allCategories') : displayCategory(cat, lang)}
           </button>
         ))}
       </div>
@@ -375,8 +442,8 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
           className="flex flex-col items-center justify-center py-28 text-center border-2 border-dashed border-border/40 rounded-3xl"
         >
           <p className="text-4xl mb-4 opacity-30">📚</p>
-          <p className="font-semibold text-foreground">Nicio carte găsită</p>
-          <p className="text-sm text-muted-foreground/60 mt-1">Încearcă o altă căutare sau categorie</p>
+          <p className="font-semibold text-foreground">{t('noBooksFound')}</p>
+          <p className="text-sm text-muted-foreground/60 mt-1">{t('tryAnotherSearch')}</p>
         </motion.div>
       )}
 

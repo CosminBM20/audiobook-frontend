@@ -3,6 +3,8 @@ import { Space_Grotesk, Fraunces, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ConditionalLayout } from "../components/ConditionalLayout";
 import { PlayerProvider } from "../contexts/PlayerContext";
+import { LanguageProvider } from "../contexts/LanguageContext";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 
 const spaceGrotesk = Space_Grotesk({
@@ -56,12 +58,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         >
           Sari la conținut
         </a>
-        <PlayerProvider>
-          <ConditionalLayout>
-            {children}
-          </ConditionalLayout>
-          <Toaster position="bottom-right" richColors closeButton />
-        </PlayerProvider>
+        <ErrorBoundary>
+          <LanguageProvider>
+            <PlayerProvider>
+              <ConditionalLayout>
+                {children}
+              </ConditionalLayout>
+              <Toaster position="bottom-right" richColors closeButton />
+            </PlayerProvider>
+          </LanguageProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

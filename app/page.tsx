@@ -6,6 +6,7 @@ export interface Audiobook {
   title: string;
   description?: string;
   createdAt?: string;
+  language?: string;
   coverImageUrl: string;
   durationSeconds: number;
   author: { name: string };
