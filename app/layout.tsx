@@ -31,7 +31,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Grai",
-  description: "Platformă premium de audiobook-uri și lectură personală",
+  description: "Dă glas cărților tale — audiobook-uri și lectură personală",
   manifest: "/manifest.json",
 };
 

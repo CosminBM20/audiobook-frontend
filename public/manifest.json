@@ -1,7 +1,7 @@
 {
   "name": "Grai",
   "short_name": "Grai",
-  "description": "Platformă premium de audiobook-uri",
+  "description": "Dă glas cărților tale — audiobook-uri și lectură personală",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
