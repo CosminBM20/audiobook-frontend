@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Rewind, FastForward, Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Rewind, FastForward, Play, Pause, Volume2, VolumeX, Loader2, FileText, Square } from 'lucide-react';
 import { usePlayerControls, usePlayerTime } from '../contexts/PlayerContext';
 import { useAudioVisualizer } from '../hooks/useAudioVisualizer';
+import { CHARS_PER_MIN, formatTtsTime } from '@/lib/ttsUtils';
 
 function fmt(s: number): string {
   if (!s || isNaN(s)) return '0:00';
@@ -40,20 +41,203 @@ function useDragSlider(onChange: (pct: number) => void) {
 }
 
 export function BottomPlayer() {
-  const { book, isPlaying, isLoading, duration, volume, toggle, seek, skip, setVolume } = usePlayerControls();
-  const { currentTime, progressPct } = usePlayerTime();
+  const {
+    book, isPlaying, isLoading, duration, volume, toggle, seek, skip, setVolume,
+    pdfTrack, ttsIsPlaying, ttsPaused, pauseTts, resumeTts, stopTts, seekTts,
+    ttsVolume, setTtsVolume,
+    ttsRate, setTtsRate,
+  } = usePlayerControls();
+  const { currentTime, progressPct, ttsOffset, ttsTotalChars } = usePlayerTime();
   const prevVolume = useRef(volume > 0 ? volume : 0.75);
   const canvasRef  = useAudioVisualizer(isPlaying);
+
+  const [ttsSpeedOpen, setTtsSpeedOpen] = useState(false);
+  const ttsSpeedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (ttsSpeedRef.current && !ttsSpeedRef.current.contains(e.target as Node)) {
+        setTtsSpeedOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
 
   const onScrubChange  = useCallback((pct: number) => seek(pct * duration), [seek, duration]);
   const onVolumeChange = useCallback((pct: number) => setVolume(pct), [setVolume]);
   const handleScrubber = useDragSlider(onScrubChange);
   const handleVolume   = useDragSlider(onVolumeChange);
 
+  const prevTtsVolume = useRef(1);
+  const onTtsVolumeChange = useCallback((pct: number) => setTtsVolume(pct), [setTtsVolume]);
+  const handleTtsVolume   = useDragSlider(onTtsVolumeChange);
+
   const toggleMute = () => {
     if (volume > 0) { prevVolume.current = volume; setVolume(0); }
     else setVolume(prevVolume.current);
   };
+
+  const toggleTtsMute = () => {
+    if (ttsVolume > 0) { prevTtsVolume.current = ttsVolume; setTtsVolume(0); }
+    else setTtsVolume(prevTtsVolume.current);
+  };
+
+  if (!book && !pdfTrack) return null;
+
+  if (pdfTrack) {
+    const ttsPct     = ttsTotalChars > 0 ? Math.min(100, (ttsOffset / ttsTotalChars) * 100) : 0;
+    const handleBar  = (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect   = e.currentTarget.getBoundingClientRect();
+      const offset = Math.round(((e.clientX - rect.left) / rect.width) * ttsTotalChars);
+      seekTts(offset);
+    };
+
+    return (
+      <div
+        role="region"
+        aria-label="Player PDF persistent"
+        className="fixed bottom-0 left-0 right-0 z-50 h-[72px] flex items-center px-4 gap-2 bg-background/90 backdrop-blur-xl border-t border-border/60 shadow-[0_-4px_40px_oklch(0_0_0_/_0.15)] animate-slide-up"
+      >
+        {/* LEFT: PDF info */}
+        <div className="flex items-center gap-3 w-[26%] min-w-0">
+          <div className="size-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <FileText className="size-5 text-primary" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm text-foreground truncate leading-tight">{pdfTrack.title}</p>
+            <p className="text-xs text-muted-foreground">PDF · TTS</p>
+          </div>
+        </div>
+
+        {/* CENTER: Controls + progress */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-4">
+            {/* Speed dropdown */}
+            <div className="relative" ref={ttsSpeedRef}>
+              <button
+                onClick={() => setTtsSpeedOpen(p => !p)}
+                className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground hover:text-foreground bg-card border border-border/50 rounded-lg px-2 py-0.5 transition-colors hover:border-primary/40"
+              >
+                {ttsRate.toFixed(2).replace(/\.?0+$/, '')}x
+              </button>
+              {ttsSpeedOpen && (
+                <div className="absolute bottom-full mb-2 left-0 z-50 bg-popover border border-border/60 rounded-xl shadow-xl overflow-hidden min-w-[76px]">
+                  {[0.5, 0.75, 0.82, 1.0, 1.25, 1.5].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => { setTtsRate(s); setTtsSpeedOpen(false); }}
+                      className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors ${
+                        Math.abs(ttsRate - s) < 0.01
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-foreground hover:bg-muted/70'
+                      }`}
+                    >
+                      {s}x
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => seekTts(Math.max(0, ttsOffset - CHARS_PER_MIN))} aria-label="Înapoi 1 minut"
+              className="flex flex-col items-center gap-px text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded">
+              <span className="text-[10px] font-mono font-bold">−1m</span>
+            </button>
+
+            <button
+              onClick={ttsIsPlaying ? pauseTts : resumeTts}
+              aria-label={ttsIsPlaying ? 'Pauză' : 'Continuă'}
+              className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md shadow-primary/30 hover:scale-105 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {ttsIsPlaying
+                ? <Pause className="size-[17px]" aria-hidden="true" />
+                : <Play  className="size-[17px] ml-0.5" aria-hidden="true" fill="currentColor" />
+              }
+            </button>
+
+            <button onClick={() => seekTts(Math.min(ttsTotalChars, ttsOffset + CHARS_PER_MIN))} aria-label="Înainte 1 minut"
+              className="flex flex-col items-center gap-px text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded">
+              <span className="text-[10px] font-mono font-bold">+1m</span>
+            </button>
+          </div>
+
+          {/* Scrubber */}
+          <div className="flex items-center gap-2 w-full max-w-[480px]">
+            <span className="text-[10px] tabular-nums font-mono text-muted-foreground w-10 text-right shrink-0">
+              {formatTtsTime(ttsOffset)}
+            </span>
+            <div
+              role="progressbar"
+              aria-valuenow={Math.round(ttsPct)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="relative flex-1 h-1 rounded-full cursor-pointer select-none bg-muted group hover:h-[5px] transition-all duration-150"
+              onClick={handleBar}
+            >
+              <div
+                className="absolute inset-y-0 left-0 rounded-full pointer-events-none bg-gradient-to-r from-primary to-[var(--gold)]"
+                style={{ width: `${ttsPct}%` }}
+              />
+            </div>
+            <span className="text-[10px] tabular-nums font-mono text-muted-foreground w-10 shrink-0">
+              {formatTtsTime(ttsTotalChars)}
+            </span>
+          </div>
+        </div>
+
+        {/* RIGHT: Volume + Stop */}
+        <div className="flex items-center justify-end gap-2 w-[26%] pr-2">
+          <button
+            onClick={toggleTtsMute}
+            aria-label={ttsVolume === 0 ? 'Activează sunetul' : 'Dezactivează sunetul'}
+            className="text-muted-foreground hover:text-primary transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          >
+            {ttsVolume === 0
+              ? <VolumeX className="size-4" aria-hidden="true" />
+              : <Volume2 className="size-4" aria-hidden="true" />
+            }
+          </button>
+
+          <div
+            role="slider"
+            aria-label="Volum voce"
+            aria-valuenow={Math.round(ttsVolume * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            tabIndex={0}
+            className="relative w-20 h-1 rounded-full cursor-pointer select-none bg-muted group hover:h-[5px] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            onMouseDown={handleTtsVolume}
+            onKeyDown={e => {
+              if (e.key === 'ArrowRight') setTtsVolume(Math.min(1, ttsVolume + 0.05));
+              if (e.key === 'ArrowLeft')  setTtsVolume(Math.max(0, ttsVolume - 0.05));
+            }}
+          >
+            <div
+              className="absolute inset-y-0 left-0 rounded-full pointer-events-none bg-gradient-to-r from-primary to-[var(--gold)]"
+              style={{ width: `${ttsVolume * 100}%` }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-3 rounded-full bg-primary shadow scale-0 group-hover:scale-100 transition-transform duration-150 pointer-events-none"
+              style={{ left: `${ttsVolume * 100}%` }}
+            />
+          </div>
+
+          <span className="text-[10px] tabular-nums font-mono text-muted-foreground w-7 text-right shrink-0" aria-hidden="true">
+            {Math.round(ttsVolume * 100)}%
+          </span>
+
+          <button
+            onClick={stopTts}
+            aria-label="Oprește documentul"
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ml-1"
+          >
+            <Square className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!book) return null;
 

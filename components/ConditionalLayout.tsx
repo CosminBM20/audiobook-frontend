@@ -7,16 +7,10 @@ import { AppSidebar } from './AppSidebar';
 import { BottomPlayer } from './BottomPlayer';
 import { SearchProvider } from './SearchContext';
 import { usePlayerControls } from '../contexts/PlayerContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { HelpCircle, X, Keyboard } from 'lucide-react';
 
 const NO_CHROME = ['/login', '/register'];
-
-const SHORTCUTS = [
-  { key: 'Space', action: 'Play / Pauză' },
-  { key: '←',    action: 'Înapoi 15 secunde' },
-  { key: '→',    action: 'Înainte 15 secunde' },
-  { key: 'M',    action: 'Mute / Unmute volum' },
-];
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -25,7 +19,15 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [mobileOpen,   setMobileOpen]   = useState(false);
   const [showHelp,     setShowHelp]     = useState(false);
-  const { book } = usePlayerControls();
+  const { book, pdfTrack } = usePlayerControls();
+  const { t } = useLanguage();
+
+  const SHORTCUTS = [
+    { key: 'Space', action: t('shortcutPlay') },
+    { key: '←',    action: t('back15') },
+    { key: '→',    action: t('forward15') },
+    { key: 'M',    action: t('shortcutMute') },
+  ];
 
   const isAuthRoute = NO_CHROME.includes(pathname);
 
@@ -71,7 +73,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
       <main
         id="main-content"
-        className={`pt-16 lg:pl-64 min-h-screen bg-background transition-[padding] duration-300 ${book ? 'pb-[72px]' : ''}`}
+        className={`pt-16 lg:pl-64 min-h-screen bg-background transition-[padding] duration-300 ${(book || pdfTrack) ? 'pb-[80px]' : ''}`}
       >
         {children}
       </main>
@@ -80,9 +82,9 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
       {/* ── Floating help button ─────────────────────────────────────────── */}
       <button
-        aria-label="Deschide ajutor"
+        aria-label={t('openHelp')}
         onClick={() => setShowHelp(true)}
-        className={`fixed right-6 z-50 flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-105 transition-all duration-200 ${book ? 'bottom-[88px]' : 'bottom-6'}`}
+        className={`fixed right-6 z-50 flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-105 transition-all duration-200 ${(book || pdfTrack) ? 'bottom-[88px]' : 'bottom-6'}`}
       >
         <HelpCircle className="size-5" strokeWidth={1.5} />
       </button>
@@ -97,12 +99,12 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <Keyboard className="size-4 text-primary" />
-                <h2 className="font-semibold text-foreground">Scurtături tastatură</h2>
+                <h2 className="font-semibold text-foreground">{t('shortcutsTitle')}</h2>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
                 className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Închide"
+                aria-label={t('closeModal')}
               >
                 <X className="size-4" />
               </button>
@@ -118,7 +120,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
               ))}
             </div>
             <p className="mt-5 text-xs text-muted-foreground/50 text-center">
-              Scurtăturile funcționează în pagina playerului
+              {t('shortcutsHint')}
             </p>
           </div>
         </div>

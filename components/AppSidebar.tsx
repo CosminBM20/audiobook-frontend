@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { Library, LayoutDashboard, ShieldCheck, LogOut, Headphones } from 'lucide-react';
+import { Library, LayoutDashboard, ShieldCheck, LogOut, Headphones, Award } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { usePlayerControls } from '../contexts/PlayerContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -112,6 +112,21 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
             {t('adminPanel')}
           </Link>
         )}
+
+        {isAdmin && (
+          <Link
+            href="/admin/challenges"
+            onClick={onNavClick}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+              pathname === '/admin/challenges'
+                ? 'bg-primary text-primary-foreground shadow-[0_2px_12px_var(--glow-sage)]'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+            }`}
+          >
+            <Award className="size-4 shrink-0" strokeWidth={pathname === '/admin/challenges' ? 2 : 1.5} />
+            {t('challenges')}
+          </Link>
+        )}
       </nav>
 
       {/* Bottom section */}
@@ -139,12 +154,18 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
         {/* User + logout */}
         {isLoggedIn && (
           <div className="flex items-center gap-2 px-1">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/15 border border-primary/25 shrink-0">
-              <span className="text-[11px] font-bold text-primary">
-                {userName.trim().charAt(0).toUpperCase() || '?'}
-              </span>
-            </div>
-            <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{userName}</span>
+            <Link
+              href="/profile"
+              onClick={onNavClick}
+              className="flex items-center gap-2 flex-1 min-w-0 group/profile rounded-xl hover:bg-sidebar-accent px-1 py-0.5 transition-colors"
+            >
+              <div className="flex size-7 items-center justify-center rounded-lg bg-primary/15 border border-primary/25 shrink-0 group-hover/profile:border-primary/50 transition-colors">
+                <span className="text-[11px] font-bold text-primary">
+                  {userName.trim().charAt(0).toUpperCase() || '?'}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground truncate flex-1 min-w-0 group-hover/profile:text-foreground transition-colors">{userName}</span>
+            </Link>
             <button
               onClick={handleLogout}
               title={t('logout')}
@@ -160,11 +181,11 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
 }
 
 export function AppSidebar({ mobileOpen = false, onClose }: AppSidebarProps) {
-  const { book } = usePlayerControls();
+  const { book, pdfTrack } = usePlayerControls();
   return (
     <>
       {/* Desktop — fixed, hidden on mobile */}
-      <aside className={`hidden lg:flex fixed left-0 top-16 w-64 bg-sidebar border-r border-sidebar-border/60 z-40 flex-col overflow-y-auto transition-[bottom] duration-300 ${book ? 'bottom-[72px]' : 'bottom-0'}`}>
+      <aside className={`hidden lg:flex fixed left-0 top-16 w-64 bg-sidebar border-r border-sidebar-border/60 z-40 flex-col overflow-y-auto transition-[bottom] duration-300 ${(book || pdfTrack) ? 'bottom-[72px]' : 'bottom-0'}`}>
         <SidebarContent />
       </aside>
 
@@ -175,7 +196,7 @@ export function AppSidebar({ mobileOpen = false, onClose }: AppSidebarProps) {
             <div className="flex size-8 items-center justify-center rounded-xl bg-primary shadow-[0_0_10px_var(--glow-sage)]">
               <Headphones className="size-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-sidebar-foreground tracking-tight">AudioBooks</span>
+            <span className="font-bold text-sidebar-foreground tracking-tight">Grai</span>
           </div>
           <div className="flex flex-col h-[calc(100%-57px)] overflow-y-auto">
             <SidebarContent onNavClick={onClose} />

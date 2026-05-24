@@ -19,10 +19,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@xenova/transformers', 'onnxruntime-node', 'sharp'],
 
   // ── Turbopack (Next.js 16 default for `next dev`) ─────────────────────────
-  // No resolveAlias needed: @xenova/transformers detects the browser/Worker
-  // environment at runtime and uses its WASM backend (onnxruntime-web).
-  // The Node.js-only imports (onnxruntime-node, sharp) are never reached in
-  // browser context, so Turbopack's tree-shaking drops them automatically.
   turbopack: {},
 
   // ── Webpack (used by `next build` for production) ─────────────────────────

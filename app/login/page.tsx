@@ -75,10 +75,10 @@ export default function LoginPage() {
               className="text-6xl font-bold leading-none"
               style={{ fontFamily: 'var(--font-fraunces)', fontStyle: 'italic', color: 'oklch(0.94 0.01 80)' }}
             >
-              AudioBooks
+              Grai
             </h1>
             <p className="text-base leading-relaxed" style={{ color: 'oklch(0.94 0.01 80 / 0.55)' }}>
-              Biblioteca ta sonoră premium.<br />Oricând, oriunde.
+              Dă glas cărților tale.<br />Oricând, oriunde.
             </p>
           </div>
 
@@ -100,7 +100,7 @@ export default function LoginPage() {
             <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
               <Headphones className="size-6 text-primary" />
             </div>
-            <h1 className="text-xl font-bold">AudioBooks</h1>
+            <h1 className="text-xl font-bold">Grai</h1>
           </div>
 
           {/* Heading */}

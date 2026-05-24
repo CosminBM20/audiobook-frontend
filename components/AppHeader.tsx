@@ -124,7 +124,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
             <Headphones className="size-4 text-primary-foreground" />
           </div>
           <span className="font-bold text-foreground text-base tracking-tight hidden sm:block">
-            AudioBooks
+            Grai
           </span>
         </Link>
       </div>
@@ -279,10 +279,10 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
           )}
         </div>
 
-        {/* Avatar → Dashboard */}
-        <button
-          onClick={() => router.push('/dashboard')}
-          title="Spațiul meu"
+        {/* Avatar → Profile */}
+        <Link
+          href="/profile"
+          title="Profilul meu"
           className="flex size-9 items-center justify-center rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/40 transition-all duration-200"
         >
           {initials ? (
@@ -290,7 +290,7 @@ export function AppHeader({ onMenuToggle }: AppHeaderProps) {
           ) : (
             <User className="size-4 text-primary" strokeWidth={1.5} />
           )}
-        </button>
+        </Link>
 
       </div>
     </header>

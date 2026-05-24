@@ -5,6 +5,8 @@ import React, {
   useState, useEffect, useCallback, useMemo,
 } from 'react';
 import { API_URL } from '@/lib/api';
+import { detectContentLang, pickBestVoice, preprocessForTts } from '@/lib/ttsUtils';
+import { toast } from '@/components/Toast';
 
 export interface Chapter {
   id: string;
@@ -26,6 +28,12 @@ export interface PlayerBook {
   chapters: Chapter[];
 }
 
+export interface PdfTrack {
+  id:         string;
+  title:      string;
+  totalChars: number;
+}
+
 // ── STABLE context ────────────────────────────────────────────────────────────
 interface PlayerStableValue {
   book: PlayerBook | null;
@@ -44,16 +52,30 @@ interface PlayerStableValue {
   setVolume: (v: number) => void;
   setPlaybackRate: (r: number) => void;
   goToChapter: (index: number) => void;
+  pdfTrack:    PdfTrack | null;
+  ttsIsPlaying: boolean;
+  ttsPaused:   boolean;
+  playPdf:     (id: string, title: string) => Promise<void>;
+  pauseTts:    () => void;
+  resumeTts:   () => void;
+  stopTts:     () => void;
+  seekTts:     (offset: number) => void;
+  ttsVolume:    number;
+  setTtsVolume: (v: number) => void;
+  ttsRate:      number;
+  setTtsRate:   (r: number) => void;
 }
 
 // ── VOLATILE context ──────────────────────────────────────────────────────────
 interface PlayerTimeValue {
   currentTime: number;   // global position across all chapters
   progressPct: number;
+  ttsOffset:    number;
+  ttsTotalChars: number;
 }
 
 const PlayerStableContext = createContext<PlayerStableValue | null>(null);
-const PlayerTimeContext   = createContext<PlayerTimeValue>({ currentTime: 0, progressPct: 0 });
+const PlayerTimeContext   = createContext<PlayerTimeValue>({ currentTime: 0, progressPct: 0, ttsOffset: 0, ttsTotalChars: 0 });
 
 export function usePlayerControls() {
   const ctx = useContext(PlayerStableContext);
@@ -129,6 +151,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
 
+  // TTS state
+  const [pdfTrack,           setPdfTrack]           = useState<PdfTrack | null>(null);
+  const [ttsIsPlaying,       setTtsIsPlaying]        = useState(false);
+  const [ttsPaused,          setTtsPaused]           = useState(false);
+  const [ttsOffsetState,     setTtsOffsetState]      = useState(0);
+  const [ttsTotalCharsState, setTtsTotalCharsState]  = useState(0);
+  const [ttsVolume,          setTtsVolumeState]      = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    const saved = localStorage.getItem('tts_volume');
+    return saved !== null ? parseFloat(saved) : 1;
+  });
+  const [ttsRate,          setTtsRateState]        = useState<number>(() => {
+    if (typeof window === 'undefined') return 0.82;
+    const saved = localStorage.getItem('tts_rate');
+    return saved !== null ? parseFloat(saved) : 0.82;
+  });
+
   // Refs — safe to use inside event handlers without stale closure issues
   const audioRef             = useRef<HTMLAudioElement | null>(_sharedAudio);
   const timeRef              = useRef(0);          // global current time
@@ -140,10 +179,53 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const bookIdRef            = useRef<string | null>(null);
   const volumeRef            = useRef(typeof window !== 'undefined' ? getInitialVolume() : 0.7);
   const rateRef              = useRef(1);
+  const pdfContentCacheRef  = useRef<Record<string, string>>({});
+  const processedCacheRef   = useRef<Record<string, string>>({});
+  const voicesCacheRef      = useRef<SpeechSynthesisVoice[]>([]);
+  const ttsOffsetRef        = useRef(0);
+  const pdfTrackIdRef       = useRef<string | null>(null);
+  const seekDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ttsVolumeRef        = useRef<number>(
+    typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts_volume') ?? '1') : 1
+  );
+  const ttsRateRef          = useRef<number>(
+    typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts_rate') ?? '0.82') : 0.82
+  );
+
   const syncVolumeTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Debounces the pause-triggered save: if the user resumes within 500 ms
   // (rapid pause/play or scrubbing) the redundant write is suppressed.
   const savePauseTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const saveProgress = useCallback((bookId: string, position: number): Promise<{ title: string; titleEn: string; badgeIcon: string; xpReward: number }[]> => {
+    const token = localStorage.getItem('token');
+    if (!token || position < 1) return Promise.resolve([]);
+    return fetch(`${API_URL}/api/audiobooks/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ audiobookId: bookId, currentPosition: Math.floor(position) }),
+    })
+      .then(r => r.json())
+      .then(data => data.newlyCompleted ?? [])
+      .catch(() => []);
+  }, []);
+
+  const showChallengeToasts = useCallback((completed: { title: string; titleEn: string; badgeIcon: string; xpReward: number }[]) => {
+    for (const ch of completed) {
+      toast(`${ch.badgeIcon} Provocare completată: ${ch.title} +${ch.xpReward} XP`, 'success');
+    }
+  }, []);
+
+  const savePdfProgress = (bookId: string, charOffset: number) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_URL}/api/personal-books/${bookId}/progress`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body:    JSON.stringify({ charOffset }),
+    }).catch(() => {});
+  };
 
   // ── Event listeners (set once) ────────────────────────────────────────────
   useEffect(() => {
@@ -200,6 +282,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const onUnload = () => {
       if (bookIdRef.current && timeRef.current > 1) saveProgress(bookIdRef.current, timeRef.current);
+      // Also cancel TTS and save PDF progress
+      window.speechSynthesis.cancel();
+      if (pdfTrackIdRef.current && ttsOffsetRef.current > 0) {
+        savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
+      }
     };
     window.addEventListener('beforeunload', onUnload);
 
@@ -220,27 +307,213 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (bookIdRef.current && timeRef.current > 1) saveProgress(bookIdRef.current, timeRef.current);
       }
     };
-  }, []);
+  }, [saveProgress]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-save every 10 s while playing ───────────────────────────────────
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => {
-      if (bookIdRef.current && timeRef.current > 1) saveProgress(bookIdRef.current, timeRef.current);
+      if (bookIdRef.current && timeRef.current > 1) {
+        saveProgress(bookIdRef.current, timeRef.current).then(showChallengeToasts);
+      }
     }, 10_000);
     return () => clearInterval(id);
-  }, [isPlaying]);
+  }, [isPlaying, saveProgress, showChallengeToasts]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const saveProgress = (bookId: string, position: number) => {
+  // ── Load TTS voices (async in Chrome) ────────────────────────────────────
+  useEffect(() => {
+    const load = () => { voicesCacheRef.current = window.speechSynthesis.getVoices(); };
+    load();
+    window.speechSynthesis.onvoiceschanged = load;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  // ── TTS Actions ───────────────────────────────────────────────────────────
+  const speakFrom = useCallback(async (bookId: string, text: string, offset: number) => {
+    const locale    = detectContentLang(text);
+    const voices    = voicesCacheRef.current.length ? voicesCacheRef.current : window.speechSynthesis.getVoices();
+    const bestVoice = pickBestVoice(voices, locale);
+
+    const utterance    = new SpeechSynthesisUtterance(text.slice(offset));
+    utterance.lang     = locale;
+    utterance.rate     = ttsRateRef.current;
+    utterance.pitch    = 1.0;
+    utterance.volume   = ttsVolumeRef.current;
+    if (bestVoice) utterance.voice = bestVoice;
+
+    let lastSaved = offset;
+    utterance.onboundary = (ev) => {
+      if (ev.name !== 'word') return;
+      const pos = offset + ev.charIndex;
+      ttsOffsetRef.current = pos;
+      if (pos - lastSaved > 300) {
+        lastSaved = pos;
+        setTtsOffsetState(pos);
+      }
+      localStorage.setItem(`tts-progress-${bookId}`, String(pos));
+    };
+
+    utterance.onend = () => {
+      const finalOffset = ttsOffsetRef.current;
+      const totalChars  = processedCacheRef.current[bookId]?.length ?? 0;
+      const isCompleted = totalChars > 0 && finalOffset >= totalChars - 200;
+      savePdfProgress(bookId, isCompleted ? totalChars : finalOffset);
+      if (isCompleted) localStorage.removeItem(`tts-progress-${bookId}`);
+      setPdfTrack(null);
+      setTtsIsPlaying(false);
+      setTtsPaused(false);
+      pdfTrackIdRef.current = null;
+      ttsOffsetRef.current  = 0;
+      setTtsOffsetState(0);
+    };
+
+    utterance.onerror = (ev) => {
+      const err = (ev as SpeechSynthesisErrorEvent).error;
+      if (err === 'canceled' || err === 'interrupted') return;
+      setTtsIsPlaying(false);
+      setTtsPaused(false);
+      pdfTrackIdRef.current = null;
+    };
+
+    window.speechSynthesis.cancel();
+    await new Promise<void>(resolve => setTimeout(resolve, 150));
+    window.speechSynthesis.speak(utterance);
+    pdfTrackIdRef.current = bookId;
+    ttsOffsetRef.current  = offset;
+    setTtsOffsetState(offset);
+    setTtsIsPlaying(true);
+    setTtsPaused(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const playPdf = useCallback(async (bookId: string, title: string) => {
+    // Stop audiobook if playing
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+    // Cancel other PDF if playing
+    if (pdfTrackIdRef.current && pdfTrackIdRef.current !== bookId) {
+      savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
+      window.speechSynthesis.cancel();
+    }
+
     const token = localStorage.getItem('token');
-    if (!token || position < 1) return;
-    fetch(`${API_URL}/api/audiobooks/progress`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ audiobookId: bookId, currentPosition: Math.floor(position) }),
-    }).catch(() => {});
-  };
+    if (!token) return;
+
+    try {
+      // Fetch and cache content if needed
+      if (!pdfContentCacheRef.current[bookId]) {
+        const res  = await fetch(`${API_URL}/api/personal-books/${bookId}/content`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!data.success) return;
+        pdfContentCacheRef.current[bookId] = data.data.content;
+      }
+
+      if (!processedCacheRef.current[bookId]) {
+        processedCacheRef.current[bookId] = preprocessForTts(pdfContentCacheRef.current[bookId]);
+      }
+
+      const processed = processedCacheRef.current[bookId];
+
+      // Fetch saved progress (API first, localStorage fallback)
+      let savedOffset = parseInt(localStorage.getItem(`tts-progress-${bookId}`) ?? '0');
+      try {
+        const progRes  = await fetch(`${API_URL}/api/personal-books/${bookId}/progress`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const progData = await progRes.json();
+        if (progData.success && progData.data?.charOffset > 0) {
+          savedOffset = progData.data.charOffset;
+        }
+      } catch {}
+
+      setPdfTrack({ id: bookId, title, totalChars: processed.length });
+      setTtsTotalCharsState(processed.length);
+      await speakFrom(bookId, processed, savedOffset);
+    } catch (err) {
+      console.error('playPdf error:', err);
+    }
+  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pauseTts = useCallback(() => {
+    window.speechSynthesis.pause();
+    setTtsIsPlaying(false);
+    setTtsPaused(true);
+  }, []);
+
+  const resumeTts = useCallback(() => {
+    window.speechSynthesis.resume();
+    setTtsIsPlaying(true);
+    setTtsPaused(false);
+  }, []);
+
+  const stopTts = useCallback(() => {
+    if (!pdfTrackIdRef.current) return;
+    savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
+    localStorage.setItem(`tts-progress-${pdfTrackIdRef.current}`, String(ttsOffsetRef.current));
+    window.speechSynthesis.cancel();
+    setPdfTrack(null);
+    setTtsIsPlaying(false);
+    setTtsPaused(false);
+    pdfTrackIdRef.current = null;
+    ttsOffsetRef.current  = 0;
+    setTtsOffsetState(0);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const seekTts = useCallback((offset: number) => {
+    const bookId = pdfTrackIdRef.current;
+    if (!bookId) return;
+    const clamped = Math.max(0, Math.min(processedCacheRef.current[bookId]?.length ?? offset, offset));
+    ttsOffsetRef.current = clamped;
+    setTtsOffsetState(clamped);
+    localStorage.setItem(`tts-progress-${bookId}`, String(clamped));
+    window.speechSynthesis.cancel();
+    setTtsIsPlaying(false);
+    setTtsPaused(false);
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
+    seekDebounceRef.current = setTimeout(async () => {
+      const text = processedCacheRef.current[bookId];
+      if (text) await speakFrom(bookId, text, clamped);
+    }, 400);
+  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setTtsVolume = useCallback((v: number) => {
+    const clamped = Math.max(0, Math.min(1, v));
+    ttsVolumeRef.current = clamped;
+    setTtsVolumeState(clamped);
+    localStorage.setItem('tts_volume', String(clamped));
+    // Re-speak from current offset if currently playing
+    const bookId = pdfTrackIdRef.current;
+    if (!bookId) return;
+    const text = processedCacheRef.current[bookId];
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    setTtsIsPlaying(false);
+    setTtsPaused(false);
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
+    seekDebounceRef.current = setTimeout(async () => {
+      await speakFrom(bookId, text, ttsOffsetRef.current);
+    }, 400);
+  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setTtsRate = useCallback((r: number) => {
+    const clamped = Math.max(0.5, Math.min(2, r));
+    ttsRateRef.current = clamped;
+    setTtsRateState(clamped);
+    localStorage.setItem('tts_rate', String(clamped));
+    const bookId = pdfTrackIdRef.current;
+    if (!bookId) return;
+    const text = processedCacheRef.current[bookId];
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    setTtsIsPlaying(false);
+    setTtsPaused(false);
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current);
+    seekDebounceRef.current = setTimeout(async () => {
+      await speakFrom(bookId, text, ttsOffsetRef.current);
+    }, 400);
+  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Shared setup called by both playBook and loadBook after fetching data.
   // Configures chapters, offsets, initial audio src and seek position.
@@ -293,6 +566,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playBook = useCallback(async (id: string) => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    // Stop TTS if it's running
+    if (pdfTrackIdRef.current) {
+      savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
+      window.speechSynthesis.cancel();
+      setPdfTrack(null);
+      setTtsIsPlaying(false);
+      setTtsPaused(false);
+      pdfTrackIdRef.current = null;
+    }
 
     if (bookIdRef.current === id) {
       if (audio.paused) await audio.play().catch(() => {});
@@ -390,11 +673,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       // Debounce: suppress redundant DB writes during rapid pause/resume or scrubbing
       if (savePauseTimer.current) clearTimeout(savePauseTimer.current);
       savePauseTimer.current = setTimeout(() => {
-        if (bookIdRef.current && timeRef.current > 1) saveProgress(bookIdRef.current, timeRef.current);
+        if (bookIdRef.current && timeRef.current > 1) {
+          saveProgress(bookIdRef.current, timeRef.current).then(showChallengeToasts);
+        }
         savePauseTimer.current = null;
       }, 250);
     }
-  }, []);
+  }, [saveProgress, showChallengeToasts]);
 
   // Seek to a global position (works across chapter boundaries).
   const seek = useCallback((globalTime: number) => {
@@ -477,13 +762,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     book, isPlaying, isLoading, duration, volume, playbackRate,
     chapters, currentChapterIdx,
     playBook, loadBook, toggle, seek, skip, setVolume, setPlaybackRate, goToChapter,
+    pdfTrack, ttsIsPlaying, ttsPaused,
+    playPdf, pauseTts, resumeTts, stopTts, seekTts,
+    ttsVolume, setTtsVolume,
+    ttsRate, setTtsRate,
   }), [book, isPlaying, isLoading, duration, volume, playbackRate,
        chapters, currentChapterIdx,
-       playBook, loadBook, toggle, seek, skip, setVolume, setPlaybackRate, goToChapter]);
+       playBook, loadBook, toggle, seek, skip, setVolume, setPlaybackRate, goToChapter,
+       pdfTrack, ttsIsPlaying, ttsPaused,
+       playPdf, pauseTts, resumeTts, stopTts, seekTts,
+       ttsVolume, setTtsVolume,
+       ttsRate, setTtsRate]);
 
   const timeValue = useMemo<PlayerTimeValue>(
-    () => ({ currentTime, progressPct }),
-    [currentTime, progressPct],
+    () => ({ currentTime, progressPct, ttsOffset: ttsOffsetState, ttsTotalChars: ttsTotalCharsState }),
+    [currentTime, progressPct, ttsOffsetState, ttsTotalCharsState],
   );
 
   return (

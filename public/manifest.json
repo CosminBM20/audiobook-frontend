@@ -1,6 +1,6 @@
 {
-  "name": "AudioBooks",
-  "short_name": "AudioBooks",
+  "name": "Grai",
+  "short_name": "Grai",
   "description": "Platformă premium de audiobook-uri",
   "start_url": "/",
   "display": "standalone",

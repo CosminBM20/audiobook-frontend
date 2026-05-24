@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Clock, Heart, BookmarkPlus, Play } from 'lucide-react';
+import { Clock, Heart, BookmarkPlus, Play, Check } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface BookCardProps {
   id: string;
@@ -11,6 +12,7 @@ interface BookCardProps {
   category: string;
   durationSeconds: number;
   progress?: number;
+  isCompleted?: boolean;
   isFavorite?: boolean;
   onFavoriteToggle?: (e: React.MouseEvent) => void;
   onListenLater?: (e: React.MouseEvent) => void;
@@ -33,8 +35,11 @@ function getBlurDataUrl(url: string): string | undefined {
 
 export const BookCard = React.memo(function BookCard({
   id, title, coverImageUrl, author, durationSeconds,
-  progress = 0, isFavorite, onFavoriteToggle, onListenLater, onPlay, createdAt,
+  progress = 0, isCompleted = false, isFavorite, onFavoriteToggle, onListenLater, onPlay, createdAt,
 }: BookCardProps) {
+  const { t } = useLanguage();
+  const completed = isCompleted || progress >= 99;
+
   const isNew = createdAt
     ? Date.now() - new Date(createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
     : false;
@@ -117,8 +122,19 @@ export const BookCard = React.memo(function BookCard({
             </button>
           )}
 
-          {/* Listening progress bar */}
-          {progress > 0 && (
+          {/* Completed badge / listening progress bar */}
+          {completed ? (
+            <div
+              className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none"
+              role="status"
+              aria-label={t('bookCompleted')}
+            >
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full bg-primary/90 text-primary-foreground shadow-[0_0_14px_var(--glow-sage)] backdrop-blur-sm select-none">
+                <Check className="size-3" aria-hidden="true" strokeWidth={2.5} />
+                {t('bookCompleted')}
+              </span>
+            </div>
+          ) : progress > 0 ? (
             <div
               className="absolute bottom-0 left-0 right-0 h-[3px] bg-border/40"
               role="progressbar"
@@ -132,7 +148,7 @@ export const BookCard = React.memo(function BookCard({
                 style={{ width: `${Math.min(100, progress)}%` }}
               />
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Text area */}

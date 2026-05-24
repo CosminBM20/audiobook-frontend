@@ -10,7 +10,7 @@ import { usePlayerControls } from '../contexts/PlayerContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toCanonical, displayCategory } from '@/lib/categories';
 import { API_URL } from '@/lib/api';
-import { LayoutGrid, List, ArrowUpAZ, Clock3, RotateCcw, User, Play, X, Heart } from 'lucide-react';
+import { LayoutGrid, List, ArrowUpAZ, Clock3, RotateCcw, User, Play, X, Heart, FileText } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Audiobook } from './page';
@@ -44,7 +44,7 @@ const gridItem: Variants = {
 
 export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[] }) {
   const { search }    = useSearch();
-  const { playBook }  = usePlayerControls();
+  const { playBook, playPdf }  = usePlayerControls();
   const { t, lang }   = useLanguage();
   const deferredSearch = useDeferredValue(search);
 
@@ -58,6 +58,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
   const [showBanner,       setShowBanner]       = useState(false);
   const [books,            setBooks]            = useState<Audiobook[]>(initialBooks);
   const [booksLoading,     setBooksLoading]     = useState(initialBooks.length === 0);
+  const [personalDocs,     setPersonalDocs]     = useState<any[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -66,6 +67,11 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
     fetch(`${API_URL}/api/favorites`, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { if (d.success) setFavorites(new Set(d.data)); })
+      .catch(() => {});
+
+    fetch(`${API_URL}/api/personal-books`, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.success) setPersonalDocs(d.data); })
       .catch(() => {});
 
     if (!sessionStorage.getItem('bannerDismissed')) {
@@ -102,7 +108,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
   const toggleFavorite = useCallback(async (e: React.MouseEvent, bookId: string) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
-    if (!token) { toast('Autentifică-te pentru a folosi această funcție.', 'error'); return; }
+    if (!token) { toast(t('errAuthRequired'), 'error'); return; }
 
     const wasFav = favorites.has(bookId);
 
@@ -121,7 +127,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.message);
-      toast(wasFav ? 'Eliminat din favorite.' : 'Adăugat la favorite!', wasFav ? 'info' : 'success');
+      toast(wasFav ? t('removedFromFav') : t('addedToFav'), wasFav ? 'info' : 'success');
     } catch {
       // Revert on failure
       setFavorites(prev => {
@@ -129,14 +135,14 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
         wasFav ? s.add(bookId) : s.delete(bookId);
         return s;
       });
-      toast('Eroare la actualizarea favoritelor.', 'error');
+      toast(t('errFavoriteUpdate'), 'error');
     }
   }, [favorites]);
 
   const addToListenLater = useCallback(async (e: React.MouseEvent, bookId: string) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
-    if (!token) { toast('Autentifică-te pentru a folosi această funcție.', 'error'); return; }
+    if (!token) { toast(t('errAuthRequired'), 'error'); return; }
     try {
       const res  = await fetch(`${API_URL}/api/listen-later`, {
         method: 'POST',
@@ -144,9 +150,9 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
         body: JSON.stringify({ audiobookId: bookId }),
       });
       const data = await res.json();
-      if (data.success) toast('Adăugat la lista de ascultare!');
-      else toast(data.message || 'Eroare.', 'error');
-    } catch { toast('Eroare de conexiune.', 'error'); }
+      if (data.success) toast(t('addedToLater'));
+      else toast(data.message || t('errGeneric'), 'error');
+    } catch { toast(t('errConnection'), 'error'); }
   }, []);
 
   // Apply diacritic corrections before computing unique categories
@@ -445,6 +451,72 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
           <p className="font-semibold text-foreground">{t('noBooksFound')}</p>
           <p className="text-sm text-muted-foreground/60 mt-1">{t('tryAnotherSearch')}</p>
         </motion.div>
+      )}
+
+      {/* ── My Documents ── */}
+      {personalDocs.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-2.5 mb-5">
+            <FileText className="size-4 text-muted-foreground" />
+            <h2
+              className="font-semibold text-foreground text-lg"
+              style={{ fontFamily: 'var(--font-fraunces)' }}
+            >
+              {t('myDocuments')}
+            </h2>
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
+              {personalDocs.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+            {personalDocs.map((doc: any) => {
+              const pct = doc.progress?.totalChars > 0
+                ? Math.min(100, Math.round((doc.progress.charOffset / doc.progress.totalChars) * 100))
+                : 0;
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => playPdf(doc.id, doc.title)}
+                  className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl"
+                >
+                  <article className="bg-card rounded-2xl overflow-hidden flex flex-col shadow-sm transition-all duration-300 hover:shadow-[0_8px_28px_oklch(0_0_0_/_0.18),_0_2px_8px_var(--glow-sage)] hover:-translate-y-0.5">
+                    {/* Cover area */}
+                    <div className="relative w-full aspect-[2/3] bg-primary/5 border-b border-border/40 flex flex-col items-center justify-center gap-2 overflow-hidden">
+                      <div className="size-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+                        <FileText className="size-6 text-primary/60" />
+                      </div>
+                      <span className="text-[9px] font-bold text-primary/50 uppercase tracking-[0.2em]">PDF</span>
+                      {/* Progress bar at bottom of cover */}
+                      {pct > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-border/40">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-primary to-[var(--gold)]"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                      {/* Play overlay on hover */}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="size-10 rounded-full bg-primary flex items-center justify-center shadow-lg">
+                          <Play className="size-4 text-primary-foreground fill-current ml-0.5" />
+                        </div>
+                      </div>
+                    </div>
+                    {/* Info */}
+                    <div className="p-3 flex flex-col gap-0.5">
+                      <p className="font-semibold text-foreground text-sm truncate leading-snug group-hover:text-primary transition-colors">
+                        {doc.title}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {pct > 0 ? `${pct}% ${t('bookCompleted').toLowerCase()}` : t('noBookStarted')}
+                      </p>
+                    </div>
+                  </article>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
     </div>
