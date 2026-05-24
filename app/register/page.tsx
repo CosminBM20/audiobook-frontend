@@ -80,7 +80,7 @@ export default function RegisterPage() {
               Grai
             </h1>
             <p className="text-base leading-relaxed" style={{ color: 'oklch(0.94 0.01 80 / 0.55)' }}>
-              Alătură-te comunității noastre<br />de ascultători pasionați.
+              Dă glas cărților tale.<br />Oricând, oriunde.
             </p>
           </div>
 
