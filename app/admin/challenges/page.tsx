@@ -42,8 +42,9 @@ export default function AdminChallengesPage() {
     const token    = localStorage.getItem('token');
     const userStr  = localStorage.getItem('user');
     if (!token || !userStr) { router.push('/login'); return; }
-    const user = JSON.parse(userStr);
-    if (user.role !== 'ADMIN') { router.push('/'); return; }
+    let user: { role?: string } | null = null;
+    try { user = JSON.parse(userStr); } catch { user = null; }
+    if (!user || user.role !== 'ADMIN') { router.push('/'); return; }
     fetchChallenges(token);
   }, [router]);
 

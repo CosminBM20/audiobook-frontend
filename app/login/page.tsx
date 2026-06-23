@@ -18,7 +18,11 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (localStorage.getItem('token')) router.replace('/');
+    if (localStorage.getItem('token')) { router.replace('/'); return; }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'inactivity') {
+      toast('Ai fost deconectat din cauza inactivității.', 'info');
+    }
   }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {

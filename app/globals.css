@@ -98,6 +98,10 @@ input[type="file"] { color: var(--foreground); }
   animation: fade-up 0.45s cubic-bezier(0.25, 0.1, 0.25, 1) both;
 }
 
+/* ╔══════════════════════════════════════════════════════════════╗ */
+/* ║  SCREENSHOT: Listing 3.7 — Vocabularul de keyframes CSS     ║ */
+/* ║  Capturați glow-pulse + float de mai jos (slide-in e bonus) ║ */
+/* ╚══════════════════════════════════════════════════════════════╝ */
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 10px var(--glow-sage); }
   50%       { box-shadow: 0 0 22px var(--glow-sage-strong); }
@@ -109,7 +113,12 @@ input[type="file"] { color: var(--foreground); }
   50%       { transform: translateY(-8px); }
 }
 .animate-float { animation: float 3.5s ease-in-out infinite; }
+/* ╚══ SFARSIT Listing 3.7 ═════════════════════════════════════╝ */
 
+/* ╔══════════════════════════════════════════════════════════════╗ */
+/* ║  SCREENSHOT: Paleta Cromatică Light Mode (secț. 3.3.1)      ║ */
+/* ║  Capturați blocul :root de mai jos                          ║ */
+/* ╚══════════════════════════════════════════════════════════════╝ */
 /* ── Solarpunk Light Mode ────────────────────────────────────────────────── */
 :root {
   /* Warm cream backgrounds */
@@ -169,7 +178,12 @@ input[type="file"] { color: var(--foreground); }
   --glow-sage-strong: oklch(0.38 0.120 142 / 0.38);
   --glow-gold:        oklch(0.62 0.130 75  / 0.18);
 }
+/* ╚══ SFARSIT Paleta Light Mode ═══════════════════════════════╝ */
 
+/* ╔══════════════════════════════════════════════════════════════╗ */
+/* ║  SCREENSHOT: Paleta Cromatică Dark Mode (secț. 3.3.1)       ║ */
+/* ║  Capturați blocul .dark de mai jos                          ║ */
+/* ╚══════════════════════════════════════════════════════════════╝ */
 /* ── Solarpunk Dark Mode ─────────────────────────────────────────────────── */
 .dark {
   /* Deep warm charcoal — slight green undertone */

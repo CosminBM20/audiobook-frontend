@@ -159,6 +159,7 @@ export default function HomeClient({ initialBooks }: { initialBooks: Audiobook[]
   const normalizedBooks = useMemo(
     () => books.map(b => ({
       ...b,
+      author: b.author ?? { name: 'Unknown' },
       category: { ...b.category, name: fixCategory(b.category.name) },
     })),
     [books],

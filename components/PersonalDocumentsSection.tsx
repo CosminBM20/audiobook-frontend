@@ -121,6 +121,9 @@ export function PersonalDocumentsSection() {
       ttsIsPlaying ? pauseTts() : resumeTts();
       return;
     }
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(' '));
     await playPdf(bookId, bookTitle);
   }, [pdfTrack, ttsIsPlaying, pauseTts, resumeTts, playPdf]);
 

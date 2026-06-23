@@ -28,7 +28,8 @@ export default function AddBookPage() {
     const token = localStorage.getItem('token');
     const user = localStorage.getItem('user');
     if (!token) { router.push('/login'); return; }
-    const parsed = user ? JSON.parse(user) : {};
+    let parsed: { role?: string } = {};
+    try { parsed = user ? JSON.parse(user) : {}; } catch { parsed = {}; }
     if (parsed.role !== 'ADMIN') router.push('/');
   }, [router]);
 

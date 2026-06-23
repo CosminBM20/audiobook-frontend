@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { Library, LayoutDashboard, ShieldCheck, LogOut, Headphones, Award } from 'lucide-react';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { usePlayerControls } from '../contexts/PlayerContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { API_URL } from '@/lib/api';
@@ -192,6 +193,10 @@ export function AppSidebar({ mobileOpen = false, onClose }: AppSidebarProps) {
       {/* Mobile — Sheet overlay */}
       <Sheet open={mobileOpen} onOpenChange={open => !open && onClose?.()}>
         <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border/60">
+          <VisuallyHidden>
+            <SheetTitle>Navigation menu</SheetTitle>
+            <SheetDescription>Main navigation sidebar</SheetDescription>
+          </VisuallyHidden>
           <div className="flex items-center gap-2.5 px-4 py-4 border-b border-sidebar-border/60">
             <div className="flex size-8 items-center justify-center rounded-xl bg-primary shadow-[0_0_10px_var(--glow-sage)]">
               <Headphones className="size-4 text-primary-foreground" />

@@ -40,6 +40,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="ro" suppressHydrationWarning>
       <head>
         {/* Prevent dark-mode flash — runs synchronously before first paint */}
+        {/* ╔══════════════════════════════════════════════════════════════╗ */}
+        {/* ║  SCREENSHOT: Listing 3.8 — Script anti-flash dark mode      ║ */}
+        {/* ║  Capturați blocul <script dangerouslySetInnerHTML> de jos    ║ */}
+        {/* ╚══════════════════════════════════════════════════════════════╝ */}
         <script dangerouslySetInnerHTML={{ __html: `
           try {
             const t = localStorage.getItem('theme');
@@ -49,6 +53,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             }
           } catch(e) {}
         `}} />
+        {/* ╚══ SFARSIT Listing 3.8 ══════════════════════════════════════╝ */}
       </head>
       <body className={`${spaceGrotesk.variable} ${fraunces.variable} ${jetbrainsMono.variable} antialiased`}>
         {/* Skip-to-main for keyboard and screen reader users — WCAG 2.4.1 */}

@@ -12,6 +12,7 @@ import {
 import { usePlayer } from '../../../contexts/PlayerContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { toast } from '../../../components/Toast';
+import { ReviewSection } from '../../../components/ReviewSection';
 import { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -535,6 +536,11 @@ export default function AudiobookDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Reviews & Ratings */}
+          <div className="border-t border-border/50 pt-6">
+            <ReviewSection audiobookId={id} />
+          </div>
 
         </div>
       </div>

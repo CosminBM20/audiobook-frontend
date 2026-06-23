@@ -287,6 +287,25 @@ export const dict = {
     addedToLater         : 'Adăugat la lista de ascultare!',
     // PersonalDocumentsSection
     resetProgress        : 'Resetează progresul',
+    // Reviews
+    reviewsSection       : 'Recenzii',
+    noReviews            : 'Nicio recenzie încă',
+    noReviewsHint        : 'Fii primul care lasă o recenzie!',
+    writeReview          : 'Scrie o recenzie',
+    editReview           : 'Editează recenzia',
+    reviewDelete         : 'Șterge recenzia',
+    submitReview         : 'Trimite recenzia',
+    updateReview         : 'Actualizează',
+    ratingLabel          : 'Evaluare',
+    commentLabel         : 'Comentariu (opțional)',
+    commentPlaceholder   : 'Spune-ți părerea despre această carte...',
+    reviewSubmitted      : 'Recenzie trimisă!',
+    reviewUpdated        : 'Recenzie actualizată!',
+    reviewDeleted        : 'Recenzie ștearsă!',
+    errReviewSubmit      : 'Eroare la trimiterea recenziei.',
+    ratingsUnit          : 'evaluări',
+    yourReview           : 'Recenzia ta',
+    sessionExpired       : 'Sesiunea a expirat. Autentifică-te din nou.',
   },
   en: {
     // Header
@@ -566,6 +585,25 @@ export const dict = {
     addedToLater         : 'Added to listen later!',
     // PersonalDocumentsSection
     resetProgress        : 'Reset progress',
+    // Reviews
+    reviewsSection       : 'Reviews',
+    noReviews            : 'No reviews yet',
+    noReviewsHint        : 'Be the first to leave a review!',
+    writeReview          : 'Write a review',
+    editReview           : 'Edit review',
+    reviewDelete         : 'Delete review',
+    submitReview         : 'Submit review',
+    updateReview         : 'Update',
+    ratingLabel          : 'Rating',
+    commentLabel         : 'Comment (optional)',
+    commentPlaceholder   : 'Share your thoughts on this book...',
+    reviewSubmitted      : 'Review submitted!',
+    reviewUpdated        : 'Review updated!',
+    reviewDeleted        : 'Review deleted!',
+    errReviewSubmit      : 'Error submitting review.',
+    ratingsUnit          : 'ratings',
+    yourReview           : 'Your review',
+    sessionExpired       : 'Session expired. Please sign in again.',
   },
 } as const;
 

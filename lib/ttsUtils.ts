@@ -18,6 +18,10 @@ export function detectContentLang(text: string): string {
   return (roChars > 8 || roWords > 2) ? 'ro-RO' : 'en-US';
 }
 
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  SCREENSHOT: Listing 4.3 — Selecția vocii TTS prin scoring  ║
+// ║  Capturați întreaga funcție pickBestVoice de mai jos         ║
+// ╚══════════════════════════════════════════════════════════════╝
 export function pickBestVoice(voices: SpeechSynthesisVoice[], locale: string): SpeechSynthesisVoice | null {
   const prefix     = locale.split('-')[0];
   const candidates = voices.filter(v => v.lang === locale || v.lang.startsWith(prefix));
@@ -32,11 +36,12 @@ export function pickBestVoice(voices: SpeechSynthesisVoice[], locale: string): S
     if (n.includes('premium'))   s += 5;
     if (n.includes('enhanced'))  s += 4;
     if (n.includes('microsoft')) s += 3;
-    if (n.includes('google'))    s += 3;
+    if (n.includes('google'))    s += 1; // lower than Microsoft so Natural voices win
     return s;
   };
   return candidates.sort((a, b) => score(b) - score(a))[0] ?? null;
 }
+// ╚══ SFARSIT Listing 4.3 ══════════════════════════════════════╝
 
 export function preprocessForTts(raw: string): string {
   return raw

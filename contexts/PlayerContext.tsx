@@ -5,7 +5,7 @@ import React, {
   useState, useEffect, useCallback, useMemo,
 } from 'react';
 import { API_URL } from '@/lib/api';
-import { detectContentLang, pickBestVoice, preprocessForTts } from '@/lib/ttsUtils';
+import { detectContentLang, pickBestVoice, preprocessForTts, CHARS_PER_MIN } from '@/lib/ttsUtils';
 import { toast } from '@/components/Toast';
 
 export interface Chapter {
@@ -147,6 +147,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [chapters,          setChapters]          = useState<Chapter[]>([]);
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
 
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║  SCREENSHOT: Listing 4.1 — Sincronizarea useRef cu useState  ║
+  // ║  Capturați: currentTime useState + timeRef useRef (linia 173) ║
+  // ║  + funcția onTimeUpdate din useEffect (~linia 235)            ║
+  // ╚══════════════════════════════════════════════════════════════╝
   // Volatile state
   const [currentTime, setCurrentTime] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
@@ -170,7 +175,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   // Refs — safe to use inside event handlers without stale closure issues
   const audioRef             = useRef<HTMLAudioElement | null>(_sharedAudio);
-  const timeRef              = useRef(0);          // global current time
+  const timeRef              = useRef(0);          // global current time — LISTING 4.1: useRef paralel cu useState
   const totalDurRef          = useRef(0);          // total book duration
   const durRef               = useRef(0);          // current chapter audio duration
   const chaptersRef          = useRef<Chapter[]>([]);
@@ -185,6 +190,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const ttsOffsetRef        = useRef(0);
   const pdfTrackIdRef       = useRef<string | null>(null);
   const seekDebounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timestamp of the last real `onboundary` word event. Used to decide whether
+  // a voice actually reports word positions (Edge / some voices do) or whether
+  // the time-based estimator must drive the progress bar (most Chrome SAPI
+  // voices never fire onboundary).
+  const lastTtsBoundaryRef  = useRef(0);
   const ttsVolumeRef        = useRef<number>(
     typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts_volume') ?? '1') : 1
   );
@@ -197,6 +207,20 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // (rapid pause/play or scrubbing) the redundant write is suppressed.
   const savePauseTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Sequence counters used to discard results from a stale in-flight request
+  // (e.g. user clicks book B before book A's fetch has resolved).
+  const bookLoadSeqRef = useRef(0);
+  const pdfLoadSeqRef  = useRef(0);
+  // Shows the "session expired" toast at most once per session instead of
+  // once per failed auto-save (every 10s).
+  const sessionExpiredNotifiedRef = useRef(false);
+
+  const notifySessionExpired = useCallback(() => {
+    if (sessionExpiredNotifiedRef.current) return;
+    sessionExpiredNotifiedRef.current = true;
+    toast('Sesiunea a expirat. Reconectează-te pentru ca progresul să fie salvat.', 'error');
+  }, []);
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   const saveProgress = useCallback((bookId: string, position: number): Promise<{ title: string; titleEn: string; badgeIcon: string; xpReward: number }[]> => {
     const token = localStorage.getItem('token');
@@ -206,10 +230,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ audiobookId: bookId, currentPosition: Math.floor(position) }),
     })
-      .then(r => r.json())
-      .then(data => data.newlyCompleted ?? [])
+      .then(r => {
+        if (r.status === 401 || r.status === 403) { notifySessionExpired(); return null; }
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(data => data?.newlyCompleted ?? [])
       .catch(() => []);
-  }, []);
+  }, [notifySessionExpired]);
 
   const showChallengeToasts = useCallback((completed: { title: string; titleEn: string; badgeIcon: string; xpReward: number }[]) => {
     for (const ch of completed) {
@@ -217,21 +245,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const savePdfProgress = (bookId: string, charOffset: number) => {
+  const savePdfProgress = useCallback((bookId: string, charOffset: number) => {
     const token = localStorage.getItem('token');
     if (!token) return;
     fetch(`${API_URL}/api/personal-books/${bookId}/progress`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body:    JSON.stringify({ charOffset }),
-    }).catch(() => {});
-  };
+    })
+      .then(r => { if (r.status === 401 || r.status === 403) notifySessionExpired(); })
+      .catch(() => {});
+  }, [notifySessionExpired]);
 
   // ── Event listeners (set once) ────────────────────────────────────────────
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
+    // ╔══════════════════════════════════════════════════════════════╗
+    // ║  SCREENSHOT: Listing 4.1 — handler onTimeUpdate (partea 2)  ║
+    // ║  Capturați funcția onTimeUpdate de mai jos                   ║
+    // ╚══════════════════════════════════════════════════════════════╝
     const onTimeUpdate = () => {
       const localT  = audio.currentTime;
       const offset  = chapterOffsetsRef.current[currentChapterIdxRef.current] ?? 0;
@@ -241,6 +275,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setCurrentTime(globalT);
       setProgressPct(total > 0 ? (globalT / total) * 100 : 0);
     };
+    // ╚══ SFARSIT Listing 4.1 ══════════════════════════════════════╝
 
     const onMetadata = () => {
       const d = audio.duration;
@@ -328,64 +363,207 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
+  // ── PDF TTS progress estimator ──────────────────────────────────────────────
+  // Many Chrome SAPI voices never emit `onboundary`, so the speech engine reports
+  // no word positions and the progress bar would stay frozen. While TTS is
+  // playing, advance the displayed character offset based on the speaking rate.
+  // If real onboundary events ARE firing (Edge / some voices), this estimator
+  // stays dormant and lets those accurate positions drive the bar instead.
+  useEffect(() => {
+    if (!ttsIsPlaying) return;
+    const TICK_MS = 250;
+    const id = setInterval(() => {
+      const bookId = pdfTrackIdRef.current;
+      if (!bookId) return;
+      const total = processedCacheRef.current[bookId]?.length || ttsTotalCharsState || 0;
+
+      // If no real word-boundary event arrived in the last ~1.2 s, this voice
+      // doesn't report positions — advance the offset by the estimated speaking
+      // rate (chars/sec scaled to the 0.82 baseline CHARS_PER_MIN is calibrated
+      // for). When onboundary IS firing, it keeps ttsOffsetRef accurate and we
+      // simply mirror it below.
+      const boundaryActive = Date.now() - lastTtsBoundaryRef.current < 1200;
+      if (!boundaryActive) {
+        const charsPerSec = (CHARS_PER_MIN / 60) * (ttsRateRef.current / 0.82);
+        const advanced = ttsOffsetRef.current + charsPerSec * (TICK_MS / 1000);
+        ttsOffsetRef.current = total > 0 ? Math.min(total, advanced) : advanced;
+      }
+
+      // Single writer of the visible state — push the current position every
+      // tick so the bar moves smoothly whether the position came from the
+      // engine (onboundary) or from the estimate above.
+      const shown = Math.floor(ttsOffsetRef.current);
+      setTtsOffsetState(shown);
+      localStorage.setItem(`tts-progress-${bookId}`, String(shown));
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [ttsIsPlaying, ttsTotalCharsState]);
+
   // ── TTS Actions ───────────────────────────────────────────────────────────
-  const speakFrom = useCallback(async (bookId: string, text: string, offset: number) => {
-    const locale    = detectContentLang(text);
-    const voices    = voicesCacheRef.current.length ? voicesCacheRef.current : window.speechSynthesis.getVoices();
+
+  // Chrome silently drops SpeechSynthesisUtterances longer than ~32 KB.
+  // Split the text into safe-sized chunks and chain them via onend so that
+  // arbitrarily large PDFs play correctly regardless of browser limits.
+  const CHUNK_SIZE = 10_000; // chars per utterance (~5-6 min of speech each)
+
+  const speakFrom = useCallback(async (bookId: string, text: string, offset: number, seq?: number) => {
+    const locale = detectContentLang(text);
+
+    // Chrome loads voices asynchronously — getVoices() returns [] on the first
+    // call until the 'voiceschanged' event fires. Without a voice explicitly set
+    // on the utterance, Chrome silently drops speak() while the engine is still
+    // initialising (Edge is more permissive and works without this wait).
+    let voices = voicesCacheRef.current.length
+      ? voicesCacheRef.current
+      : window.speechSynthesis.getVoices();
+
+    if (!voices.length) {
+      voices = await new Promise<SpeechSynthesisVoice[]>(resolve => {
+        const onReady = () => {
+          window.speechSynthesis.removeEventListener('voiceschanged', onReady);
+          const v = window.speechSynthesis.getVoices();
+          voicesCacheRef.current = v;
+          resolve(v);
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', onReady);
+        // Safety timeout: proceed even if the event never fires
+        setTimeout(() => {
+          window.speechSynthesis.removeEventListener('voiceschanged', onReady);
+          resolve(window.speechSynthesis.getVoices());
+        }, 3000);
+      });
+    }
+
+    // Another playPdf()/seek/track-switch started while we were waiting on
+    // voices to load — this call is stale and must not resurrect its track
+    // over whatever the user has since navigated to.
+    if (seq !== undefined && pdfLoadSeqRef.current !== seq) return;
+
     const bestVoice = pickBestVoice(voices, locale);
 
-    const utterance    = new SpeechSynthesisUtterance(text.slice(offset));
-    utterance.lang     = locale;
-    utterance.rate     = ttsRateRef.current;
-    utterance.pitch    = 1.0;
-    utterance.volume   = ttsVolumeRef.current;
-    if (bestVoice) utterance.voice = bestVoice;
+    // Google online voices (localService=false) fail silently in Chrome.
+    // Fall back to the best local (SAPI/OneCore) voice with the same language.
+    const isGoogle = (v: SpeechSynthesisVoice) => v.name.toLowerCase().startsWith('google');
+    const chosenVoice: SpeechSynthesisVoice | null = (() => {
+      if (!bestVoice || !isGoogle(bestVoice)) return bestVoice;
+      const prefix = locale.split('-')[0];
+      return (
+        voices.find(v => v.localService && (v.lang === locale || v.lang.startsWith(prefix)))
+        ?? voices.find(v => v.localService)
+        ?? bestVoice
+      );
+    })();
 
-    let lastSaved = offset;
-    utterance.onboundary = (ev) => {
-      if (ev.name !== 'word') return;
-      const pos = offset + ev.charIndex;
-      ttsOffsetRef.current = pos;
-      if (pos - lastSaved > 300) {
-        lastSaved = pos;
-        setTtsOffsetState(pos);
-      }
-      localStorage.setItem(`tts-progress-${bookId}`, String(pos));
-    };
+    const fullText = text.slice(offset);
 
-    utterance.onend = () => {
-      const finalOffset = ttsOffsetRef.current;
-      const totalChars  = processedCacheRef.current[bookId]?.length ?? 0;
-      const isCompleted = totalChars > 0 && finalOffset >= totalChars - 200;
-      savePdfProgress(bookId, isCompleted ? totalChars : finalOffset);
-      if (isCompleted) localStorage.removeItem(`tts-progress-${bookId}`);
+    if (!fullText.length) {
+      // Nothing left — mark as completed
+      savePdfProgress(bookId, text.length);
+      localStorage.removeItem(`tts-progress-${bookId}`);
       setPdfTrack(null);
       setTtsIsPlaying(false);
       setTtsPaused(false);
       pdfTrackIdRef.current = null;
       ttsOffsetRef.current  = 0;
       setTtsOffsetState(0);
-    };
+      return;
+    }
 
-    utterance.onerror = (ev) => {
-      const err = (ev as SpeechSynthesisErrorEvent).error;
-      if (err === 'canceled' || err === 'interrupted') return;
-      setTtsIsPlaying(false);
-      setTtsPaused(false);
-      pdfTrackIdRef.current = null;
-    };
-
+    // cancel() is required even on an idle engine — it initialises Chrome's
+    // Google TTS client before speak(). A delay after cancel() breaks online
+    // voices (Google TTS session expires during the pause), so we call
+    // speakChunk immediately with no await between cancel and speak.
     window.speechSynthesis.cancel();
-    await new Promise<void>(resolve => setTimeout(resolve, 150));
-    window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.resume();
+
+    let chunkBaseOffset = offset; // absolute char position where the current chunk starts
+
+    const speakChunk = (chunkIndex: number) => {
+      if (pdfTrackIdRef.current !== bookId) return; // cancelled externally
+
+      const chunkStart = chunkIndex * CHUNK_SIZE;
+      if (chunkStart >= fullText.length) {
+        // All chunks finished — finalize
+        const finalOffset = ttsOffsetRef.current;
+        const totalChars  = processedCacheRef.current[bookId]?.length ?? 0;
+        const isCompleted = totalChars > 0 && finalOffset >= totalChars - 200;
+        savePdfProgress(bookId, isCompleted ? totalChars : finalOffset);
+        if (isCompleted) localStorage.removeItem(`tts-progress-${bookId}`);
+        setPdfTrack(null);
+        setTtsIsPlaying(false);
+        setTtsPaused(false);
+        pdfTrackIdRef.current = null;
+        ttsOffsetRef.current  = 0;
+        setTtsOffsetState(0);
+        return;
+      }
+
+      const chunk      = fullText.slice(chunkStart, chunkStart + CHUNK_SIZE);
+      const utterance  = new SpeechSynthesisUtterance(chunk);
+      utterance.lang   = locale;
+      utterance.rate   = ttsRateRef.current;
+      utterance.pitch  = 1.0;
+      utterance.volume = ttsVolumeRef.current;
+      if (chosenVoice) utterance.voice = chosenVoice;
+      else if (voices.length > 0) utterance.voice = voices.find(v => v.localService) ?? voices[0];
+
+      utterance.onboundary = (ev) => {
+        if (ev.name !== 'word') return;
+        // Only record the TRUE position + a timestamp. The estimator effect is
+        // the single writer of the visible state (setTtsOffsetState), so the bar
+        // advances smoothly regardless of whether this event fires per-word,
+        // irregularly, or never (most Chrome SAPI voices do not fire it).
+        lastTtsBoundaryRef.current = Date.now();
+        ttsOffsetRef.current = chunkBaseOffset + ev.charIndex;
+      };
+
+      utterance.onend = () => {
+        if (pdfTrackIdRef.current !== bookId) return; // cancelled externally
+        chunkBaseOffset += chunk.length;
+        // Resync to the true position at the chunk boundary so any drift the
+        // estimator accumulated is corrected every ~10k chars.
+        ttsOffsetRef.current = chunkBaseOffset;
+        speakChunk(chunkIndex + 1);
+      };
+
+      utterance.onerror = (ev) => {
+        const err = (ev as SpeechSynthesisErrorEvent).error;
+        // canceled / interrupted are expected when we deliberately stop or
+        // switch tracks — ignore them.
+        if (err === 'canceled' || err === 'interrupted') return;
+        // A genuine failure: clear BOTH the ref and the React state so the bar
+        // is never left visible-but-frozen (which previously caused a stale PDF
+        // bar to persist when the user then started an audiobook).
+        if (pdfTrackIdRef.current === bookId) {
+          pdfTrackIdRef.current = null;
+          setPdfTrack(null);
+          setTtsIsPlaying(false);
+          setTtsPaused(false);
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
     pdfTrackIdRef.current = bookId;
     ttsOffsetRef.current  = offset;
     setTtsOffsetState(offset);
     setTtsIsPlaying(true);
     setTtsPaused(false);
+    // Give the engine a brief grace window to fire its first onboundary before
+    // the estimator kicks in (so Edge/voices that DO report positions stay
+    // perfectly accurate and the estimator never fights them).
+    lastTtsBoundaryRef.current = Date.now();
+
+    speakChunk(0);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playPdf = useCallback(async (bookId: string, title: string) => {
+    // Claim this as the latest PDF-load request. Any earlier playPdf() call
+    // still awaiting fetches/voices will see its seq go stale and bail out
+    // instead of resurrecting the wrong track (see checks below + in speakFrom).
+    const seq = ++pdfLoadSeqRef.current;
+
     // Stop audiobook if playing
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
@@ -393,6 +571,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     // Cancel other PDF if playing
     if (pdfTrackIdRef.current && pdfTrackIdRef.current !== bookId) {
       savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
+      // Clear a pending debounced re-speak from the previous PDF so it cannot
+      // resurrect itself after we switch to the new document.
+      if (seekDebounceRef.current) {
+        clearTimeout(seekDebounceRef.current);
+        seekDebounceRef.current = null;
+      }
       window.speechSynthesis.cancel();
     }
 
@@ -409,6 +593,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (!data.success) return;
         pdfContentCacheRef.current[bookId] = data.data.content;
       }
+      if (pdfLoadSeqRef.current !== seq) return; // superseded by a newer playPdf() call
 
       if (!processedCacheRef.current[bookId]) {
         processedCacheRef.current[bookId] = preprocessForTts(pdfContentCacheRef.current[bookId]);
@@ -428,13 +613,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {}
 
+      if (pdfLoadSeqRef.current !== seq) return; // superseded by a newer playPdf() call
+
       setPdfTrack({ id: bookId, title, totalChars: processed.length });
       setTtsTotalCharsState(processed.length);
-      await speakFrom(bookId, processed, savedOffset);
+      await speakFrom(bookId, processed, savedOffset, seq);
     } catch (err) {
       console.error('playPdf error:', err);
     }
-  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [speakFrom, savePdfProgress]);
 
   const pauseTts = useCallback(() => {
     window.speechSynthesis.pause();
@@ -448,18 +635,32 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setTtsPaused(false);
   }, []);
 
-  const stopTts = useCallback(() => {
-    if (!pdfTrackIdRef.current) return;
-    savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
-    localStorage.setItem(`tts-progress-${pdfTrackIdRef.current}`, String(ttsOffsetRef.current));
+  // Full, idempotent TTS teardown. Safe to call even when nothing is playing.
+  // Clears any pending debounced re-speak (so a queued seek/rate/volume change
+  // can't resurrect TTS after we switch to an audiobook), cancels speech,
+  // persists progress, and resets BOTH the ref and the React state together so
+  // the PDF player bar can never be left in a frozen / inconsistent state.
+  const teardownTts = useCallback(() => {
+    if (seekDebounceRef.current) {
+      clearTimeout(seekDebounceRef.current);
+      seekDebounceRef.current = null;
+    }
+    const activeId = pdfTrackIdRef.current;
+    if (activeId) {
+      savePdfProgress(activeId, ttsOffsetRef.current);
+      localStorage.setItem(`tts-progress-${activeId}`, String(ttsOffsetRef.current));
+    }
     window.speechSynthesis.cancel();
+    pdfTrackIdRef.current = null;
+    ttsOffsetRef.current  = 0;
     setPdfTrack(null);
     setTtsIsPlaying(false);
     setTtsPaused(false);
-    pdfTrackIdRef.current = null;
-    ttsOffsetRef.current  = 0;
     setTtsOffsetState(0);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The Stop button on the PDF bar performs the same full teardown.
+  const stopTts = teardownTts;
 
   const seekTts = useCallback((offset: number) => {
     const bookId = pdfTrackIdRef.current;
@@ -476,7 +677,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const text = processedCacheRef.current[bookId];
       if (text) await speakFrom(bookId, text, clamped);
     }, 400);
-  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [speakFrom]);
 
   const setTtsVolume = useCallback((v: number) => {
     const clamped = Math.max(0, Math.min(1, v));
@@ -495,7 +696,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     seekDebounceRef.current = setTimeout(async () => {
       await speakFrom(bookId, text, ttsOffsetRef.current);
     }, 400);
-  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [speakFrom]);
 
   const setTtsRate = useCallback((r: number) => {
     const clamped = Math.max(0.5, Math.min(2, r));
@@ -513,7 +714,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     seekDebounceRef.current = setTimeout(async () => {
       await speakFrom(bookId, text, ttsOffsetRef.current);
     }, 400);
-  }, [speakFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [speakFrom]);
 
   // Shared setup called by both playBook and loadBook after fetching data.
   // Configures chapters, offsets, initial audio src and seek position.
@@ -567,15 +768,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const audio = audioRef.current;
     if (!audio) return;
 
-    // Stop TTS if it's running
-    if (pdfTrackIdRef.current) {
-      savePdfProgress(pdfTrackIdRef.current, ttsOffsetRef.current);
-      window.speechSynthesis.cancel();
-      setPdfTrack(null);
-      setTtsIsPlaying(false);
-      setTtsPaused(false);
-      pdfTrackIdRef.current = null;
-    }
+    // Claim this as the latest book-load request. If the user navigates again
+    // before this one's fetch resolves, the stale call below sees its seq
+    // invalidated and bails out instead of overwriting the newer book's state.
+    const seq = ++bookLoadSeqRef.current;
+
+    // Always tear down any TTS/PDF state before starting a book. Idempotent —
+    // a no-op when nothing is playing. Run unconditionally (not gated on the
+    // ref) so that a bar left inconsistent by a transient TTS error is still
+    // cleared, never leaving the PDF and the audiobook both "active".
+    teardownTts();
 
     if (bookIdRef.current === id) {
       if (audio.paused) await audio.play().catch(() => {});
@@ -602,6 +804,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const bookData = await bookRes.json();
       const progData = await progRes.json();
       if (!bookData.success) return;
+      if (bookLoadSeqRef.current !== seq) return; // superseded by a newer playBook()/loadBook() call
 
       const newBook: PlayerBook = bookData.data;
       setBook(newBook);
@@ -615,12 +818,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if ((err as Error).name !== 'AbortError') console.error('playBook error:', err);
       setIsLoading(false);
     }
-  }, [_setupBook]);
+  }, [_setupBook, teardownTts, saveProgress]);
 
   // Load + prepare WITHOUT auto-playing (use inside useEffect, not a click handler).
   const loadBook = useCallback(async (id: string) => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    // Claim this as the latest book-load request — see playBook() for why.
+    const seq = ++bookLoadSeqRef.current;
+
+    // Tear down any active TTS FIRST — even if this book is already loaded — so
+    // landing on a book page always stops a PDF that is currently playing.
+    // (Runs before the early-return below, which only skips re-fetching.)
+    teardownTts();
+
     if (bookIdRef.current === id) return;
 
     if (bookIdRef.current && timeRef.current > 1) saveProgress(bookIdRef.current, timeRef.current);
@@ -643,6 +855,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const bookData = await bookRes.json();
       const progData = await progRes.json();
       if (!bookData.success) return;
+      if (bookLoadSeqRef.current !== seq) return; // superseded by a newer playBook()/loadBook() call
 
       const newBook: PlayerBook = bookData.data;
       setBook(newBook);
@@ -656,12 +869,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       console.error('loadBook error:', err);
       setIsLoading(false);
     }
-  }, [_setupBook]);
+  }, [_setupBook, teardownTts, saveProgress]);
 
   const toggle = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !bookIdRef.current) return;
     if (audio.paused) {
+      // Starting book audio must stop any PDF/TTS that is still playing — this
+      // is the play button on the book page, which (unlike playBook) does not
+      // otherwise tear TTS down. Prevents the book and a PDF running together.
+      if (pdfTrackIdRef.current) teardownTts();
       // Cancel any pending debounced save — user resumed before the 250 ms window
       if (savePauseTimer.current) {
         clearTimeout(savePauseTimer.current);
@@ -679,8 +896,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         savePauseTimer.current = null;
       }, 250);
     }
-  }, [saveProgress, showChallengeToasts]);
+  }, [saveProgress, showChallengeToasts, teardownTts]);
 
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║  SCREENSHOT: Listing 4.2 — Seek global (navigare capitole)   ║
+  // ║  Capturați întreaga funcție seek de mai jos                   ║
+  // ║  (chapterIdxAt = căutare lineară, echivalent cu binary search ║
+  // ║   descris în teză pentru claritate pedagogică)                ║
+  // ╚══════════════════════════════════════════════════════════════╝
   // Seek to a global position (works across chapter boundaries).
   const seek = useCallback((globalTime: number) => {
     const audio = audioRef.current;
@@ -723,6 +946,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       timeRef.current = clamped;
     }
   }, []);
+  // ╚══ SFARSIT Listing 4.2 ══════════════════════════════════════╝
 
   const skip = useCallback((seconds: number) => {
     seek(timeRef.current + seconds);
@@ -758,6 +982,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) audioRef.current.playbackRate = r;
   }, []);
 
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║  SCREENSHOT: Listing 3.3 — Separarea contextelor stabil/timp ║
+  // ║  Capturați: stableValue useMemo + timeValue useMemo          ║
+  // ║  + blocul return cu cele 2 Provider-e                         ║
+  // ╚══════════════════════════════════════════════════════════════╝
   const stableValue = useMemo<PlayerStableValue>(() => ({
     book, isPlaying, isLoading, duration, volume, playbackRate,
     chapters, currentChapterIdx,
@@ -786,4 +1015,5 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       </PlayerTimeContext.Provider>
     </PlayerStableContext.Provider>
   );
+  // ╚══ SFARSIT Listing 3.3 ══════════════════════════════════════╝
 }

@@ -101,8 +101,10 @@ export default function AdminPage() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     const user  = localStorage.getItem('user');
-    if (!token) { router.push('/login'); return; }
-    if (!user || JSON.parse(user).role !== 'ADMIN') { router.push('/'); return; }
+    if (!token || !user) { router.push('/login'); return; }
+    let parsed: { role?: string } | null = null;
+    try { parsed = JSON.parse(user); } catch { parsed = null; }
+    if (!parsed || parsed.role !== 'ADMIN') { router.push('/'); return; }
     fetchBooks(token);
   }, [router]);
 

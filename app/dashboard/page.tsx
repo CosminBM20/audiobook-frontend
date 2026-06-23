@@ -48,29 +48,42 @@ export default function DashboardPage() {
   }, [router]);
 
   const fetchAll = async (token: string) => {
-    try {
-      const [r1, r2, r3, r4, r5, r6, r7] = await Promise.allSettled([
-        fetch(`${API_URL}/api/audiobooks/my-books`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/audiobooks/stats`,    { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/audiobooks/activity`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/listen-later`,        { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/personal-books`,      { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/challenges`,          { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/api/challenges/streak`,   { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
+    // Each response is parsed independently — a single endpoint returning a
+    // malformed body (e.g. an HTML error page) must not prevent the other six
+    // already-resolved sections from rendering their data.
+    const apply = async (result: PromiseSettledResult<Response>, onSuccess: (data: any) => void) => {
+      if (result.status !== 'fulfilled') return false;
+      try {
+        const d = await result.value.json();
+        if (d.success) onSuccess(d.data);
+        return d.success;
+      } catch {
+        return false;
+      }
+    };
 
-      if (r1.status === 'fulfilled') { const d = await r1.value.json(); if (d.success) setPublicBooks(d.data); }
-      if (r2.status === 'fulfilled') { const d = await r2.value.json(); if (d.success) setStats(d.data); }
-      if (r3.status === 'fulfilled') { const d = await r3.value.json(); if (d.success) setActivity(d.data); }
-      if (r4.status === 'fulfilled') { const d = await r4.value.json(); if (d.success) setListenLater(d.data); }
-      if (r5.status === 'fulfilled') { const d = await r5.value.json(); if (d.success) setPersonalBooks(d.data); }
-      if (r6.status === 'fulfilled') { const d = await r6.value.json(); if (d.success) setChallenges(d.data); }
-      if (r7.status === 'fulfilled') { const d = await r7.value.json(); if (d.success) setStreak(d.data); }
-    } catch {
-      toast(t('errLoadData'), 'error');
-    } finally {
-      setLoading(false);
-    }
+    const [r1, r2, r3, r4, r5, r6, r7] = await Promise.allSettled([
+      fetch(`${API_URL}/api/audiobooks/my-books`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/audiobooks/stats`,    { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/audiobooks/activity`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/listen-later`,        { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/personal-books`,      { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/challenges`,          { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_URL}/api/challenges/streak`,   { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+
+    const results = await Promise.all([
+      apply(r1, d => setPublicBooks(d)),
+      apply(r2, d => setStats(d)),
+      apply(r3, d => setActivity(d)),
+      apply(r4, d => setListenLater(d)),
+      apply(r5, d => setPersonalBooks(d)),
+      apply(r6, d => setChallenges(d)),
+      apply(r7, d => setStreak(d)),
+    ]);
+
+    if (results.every(ok => !ok)) toast(t('errLoadData'), 'error');
+    setLoading(false);
   };
 
   const removeListenLater = async (audiobookId: string) => {
@@ -98,7 +111,7 @@ export default function DashboardPage() {
     ? Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1])[0]?.[0]
     : null;
 
-  const totalXP   = challenges.filter(c => c.isCompleted).reduce((sum: number, c: any) => sum + c.xpReward, 0);
+  const totalXP   = challenges.filter(c => c.isCompleted).reduce((sum: number, c: any) => sum + (Number(c.xpReward) || 0), 0);
   const level     = Math.floor(totalXP / 150) + 1;
   const xpInLevel = totalXP % 150;
   const xpToNext  = 150;

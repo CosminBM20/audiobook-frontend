@@ -8,9 +8,23 @@ import { BottomPlayer } from './BottomPlayer';
 import { SearchProvider } from './SearchContext';
 import { usePlayerControls } from '../contexts/PlayerContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useInactivityLogout } from '../hooks/useInactivityLogout';
 import { HelpCircle, X, Keyboard } from 'lucide-react';
 
 const NO_CHROME = ['/login', '/register'];
+
+// Decode a JWT payload without verifying the signature (client-side only).
+// Returns true when the token is expired or malformed.
+function isTokenExpired(token: string): boolean {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64)) as { exp?: number };
+    if (!payload.exp) return false;
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -19,7 +33,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [mobileOpen,   setMobileOpen]   = useState(false);
   const [showHelp,     setShowHelp]     = useState(false);
-  const { book, pdfTrack } = usePlayerControls();
+  const { book, pdfTrack, isPlaying, ttsIsPlaying } = usePlayerControls();
   const { t } = useLanguage();
 
   const SHORTCUTS = [
@@ -31,6 +45,10 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
   const isAuthRoute = NO_CHROME.includes(pathname);
 
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║  SCREENSHOT: Listing 3.2 — Guard de rută client-side        ║
+  // ║  Capturați useEffect-ul de mai jos + blocul if (!isAuthorized║
+  // ╚══════════════════════════════════════════════════════════════╝
   useEffect(() => {
     if (isAuthRoute) {
       // /login and /register are always allowed to render.
@@ -39,7 +57,11 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
     }
 
     const token = localStorage.getItem('token');
-    if (!token) {
+
+    if (!token || isTokenExpired(token)) {
+      // Clear any stale data before redirecting
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       // window.location.href is a synchronous hard redirect.
       // Unlike router.replace(), it does NOT yield back to React,
       // so there is zero chance of a subsequent render showing protected content.
@@ -49,6 +71,10 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
 
     setIsAuthorized(true);
   }, [isAuthRoute]);
+
+  // ── Inactivity auto-logout ────────────────────────────────────────────────
+  // Active only on authenticated protected routes. Suspended while audio plays.
+  useInactivityLogout(!isAuthRoute && isAuthorized, isPlaying || ttsIsPlaying);
 
   // ── STRICT GATE ───────────────────────────────────────────────────────────
   // isAuthorized starts false and is only flipped to true inside the effect
@@ -61,6 +87,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+  // ╚══ SFARSIT Listing 3.2 ══════════════════════════════════════╝
 
   // ── Auth routes (login / register) — no chrome ────────────────────────────
   if (isAuthRoute) return <>{children}</>;
